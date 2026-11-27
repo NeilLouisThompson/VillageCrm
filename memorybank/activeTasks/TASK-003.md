@@ -80,12 +80,24 @@ Feasible, low-risk conversion: ~2 new files, 1 deleted, 1 moved, ~15 small edits
 - **Notes**:
 
 ### Changes Made
+- `VillageCrm.csproj` — BlazorWebAssembly SDK, WASM packages 10.0.15
+- `Program.cs` — `WebAssemblyHostBuilder`; CSV endpoint removed
+- `wwwroot/index.html` — new host page + `downloadFile` JS helper; `Components/App.razor` deleted
+- `appsettings.json` → `wwwroot/appsettings.json`
+- `MainLayout.razor` — role saved to `localStorage` via JS interop
+- `DashboardPage.razor` — CSV built in browser
+- `Access.cs`, `Routes.razor`, 9 pages — base-relative links; `GovernanceTests` updated
+- `MockSeed.cs` — demo PIN hashed once (startup 13s → ~2.6s)
+- `launchSettings.json` — `inspectUri`
+- `.github/workflows/deploy-pages.yml` — test, publish, deploy
+- `README.md` — live link, hosting notes
+- Pushed to `NeilLouisThompson/VillageCrm` as `thompsonataccso`; Pages source was already GitHub Actions
 
 ## Demonstrate
 ### Test Results
-- Build:
-- Tests:
-- Output:
+- Build: ✅ local + CI
+- Tests: ✅ 76/76 local + CI
+- Output: Workflow run 45953867836 green (build 1m20s, deploy 12s). Live checks on https://neillouisthompson.github.io/VillageCrm/: deep link `/residents/2` loads (~3.2s cold), nav OK, role persists over reload, CSV downloads (24 lines), kiosk PIN 0000 opens account. Only console errors are the expected 404 status of deep-link documents (served via 404.html).
 
 ### Human Verification
 - **Status**: ⏳ Awaiting
