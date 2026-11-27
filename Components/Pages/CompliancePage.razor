@@ -1,0 +1,165 @@
+@page "/compliance"
+@inherits ViewerAwarePage
+@inject ComplianceService Compliance
+@inject IOptions<VillageOptions> Options
+
+<PageTitle>Compliance calendar</PageTitle>
+
+<h1>Compliance calendar</h1>
+<p class="help">
+    Starter list only. Every obligation and date must be checked with your legal adviser, auditor and payroll provider.
+    Reminders at @string.Join(", ", Options.Value.ComplianceReminderDays) days. Overdue items escalate to the village manager.
+</p>
+
+<RoleGate Area="Area.Compliance">
+    <ErrorMessage Message="@Error" />
+
+    <label class="check"><input type="checkbox" @bind="_showClosed" @bind:after="LoadAsync" /> Show closed items</label>
+
+    <table class="big-table">
+        <thead><tr><th>Obligation</th><th>Law</th><th>Due</th><th>Owner</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+            @foreach (var c in _items)
+            {
+                var state = Compliance.StateOf(c);
+                var reminder = Compliance.ReminderDays(c);
+                <tr>
+                    <td>@c.Title<br /><small>@c.Requirement (@Format.Words(c.Frequency))</small></td>
+                    <td>@c.Law@(c.VerifyWithLegalAdvisor ? " *" : "")</td>
+                    <td>
+                        @if (Viewer.Role == UserRole.Manager && state != ComplianceState.Closed)
+                        {
+                            <input type="date" value="@c.DueDate.ToString("yyyy-MM-dd")" @onchange="e => ChangeDate(c, e)" aria-label="Due date" />
+                        }
+                        else
+                        {
+                            @Format.Date(c.DueDate)
+                        }
+                    </td>
+                    <td>@c.Owner</td>
+                    <td>
+                        <span class="pill @PillClass(state)">@Format.Words(state)</span>
+                        @if (Compliance.IsEscalated(c))
+                        {
+                            <br /><small>Escalated to village manager</small>
+                        }
+                        else if (reminder is not null)
+                        {
+                            <br /><small>Reminder: @reminder day(s)</small>
+                        }
+                        @if (c.AcknowledgedBy is not null && state != ComplianceState.Closed)
+                        {
+                            <br /><small>Seen by @c.AcknowledgedBy</small>
+                        }
+                        @if (state == ComplianceState.Closed)
+                        {
+                            <br /><small>Closed by @c.ClosedBy: @c.Evidence</small>
+                        }
+                    </td>
+                    <td>
+                        @if (state != ComplianceState.Closed)
+                        {
+                            @if (c.AcknowledgedBy is null)
+                            {
+                                <button class="btn small" @onclick="() => Run(() => Compliance.AcknowledgeAsync(c.Id, Viewer.Name))">I have seen this</button>
+                            }
+                            <button class="btn small secondary" @onclick="() => _closing = c">Close with evidence</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <p class="muted">* Verify with legal advisor.</p>
+
+    @if (_closing is not null)
+    {
+        <div class="card">
+            <h2>Close: @_closing.Title</h2>
+            <p>Evidence required: @_closing.EvidenceRequired</p>
+            <label for="evidence">Evidence (document reference or where it is filed)</label>
+            <input id="evidence" class="big-input" @bind="_evidence" />
+            <div class="actions">
+                <button class="btn" @onclick="Close">Close item</button>
+                <button class="btn secondary" @onclick="() => _closing = null">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (Viewer.Role == UserRole.Manager)
+    {
+        <details class="card">
+            <summary>Add an obligation</summary>
+            <label for="ctitle">Title</label>
+            <input id="ctitle" class="big-input" @bind="_new.Title" />
+            <label for="claw">Law</label>
+            <input id="claw" class="big-input" @bind="_new.Law" />
+            <label for="creq">What is required</label>
+            <input id="creq" class="big-input" @bind="_new.Requirement" />
+            <label for="cfreq">How often</label>
+            <select id="cfreq" class="big-input" @bind="_new.Frequency">
+                @foreach (var f in Enum.GetValues<Frequency>())
+                {
+                    <option value="@f">@Format.Words(f)</option>
+                }
+            </select>
+            <label for="cdue">Due date</label>
+            <input id="cdue" type="date" class="big-input" @bind="_new.DueDate" />
+            <label for="cowner">Responsible person</label>
+            <input id="cowner" class="big-input" @bind="_new.Owner" />
+            <label for="cevid">Evidence required</label>
+            <input id="cevid" class="big-input" @bind="_new.EvidenceRequired" />
+            <div class="actions"><button class="btn" @onclick="Add">Add obligation</button></div>
+        </details>
+    }
+</RoleGate>
+
+@code {
+    private List<ComplianceItem> _items = [];
+    private bool _showClosed;
+    private ComplianceItem? _closing;
+    private string _evidence = "";
+    private ComplianceItem _new = NewItem();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _items = await Compliance.ListAsync(_showClosed);
+
+    private async Task Run(Func<Task> action)
+    {
+        await TryAsync(action);
+        await LoadAsync();
+    }
+
+    private Task ChangeDate(ComplianceItem item, ChangeEventArgs e) =>
+        DateTime.TryParse(e.Value?.ToString(), out var date) ? Run(() => Compliance.ChangeDueDateAsync(item.Id, date)) : Task.CompletedTask;
+
+    private async Task Close()
+    {
+        await Run(() => Compliance.CloseAsync(_closing!.Id, _evidence, Viewer.Name));
+        if (Error is null)
+        {
+            _closing = null;
+            _evidence = "";
+        }
+    }
+
+    private async Task Add()
+    {
+        await Run(() => Compliance.AddAsync(_new));
+        if (Error is null)
+        {
+            _new = NewItem();
+        }
+    }
+
+    private static ComplianceItem NewItem() => new() { DueDate = DateTime.Today.AddMonths(1), Frequency = Frequency.Annual };
+
+    private static string PillClass(ComplianceState state) => state switch
+    {
+        ComplianceState.Overdue => "urgent",
+        ComplianceState.DueSoon => "normal",
+        ComplianceState.Acknowledged or ComplianceState.Closed => "ok",
+        _ => "low"
+    };
+}

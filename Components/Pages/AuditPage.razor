@@ -1,0 +1,32 @@
+@page "/audit"
+@inherits ViewerAwarePage
+@inject AuditService Audit
+
+<PageTitle>Audit log</PageTitle>
+
+<h1>Audit log</h1>
+<p class="help">Every view and change of resident personal and medical data is recorded here.</p>
+
+<RoleGate Area="Area.Audit">
+    <table class="big-table">
+        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Detail</th></tr></thead>
+        <tbody>
+            @foreach (var a in _entries)
+            {
+                <tr>
+                    <td>@Format.When(a.When)</td>
+                    <td>@a.Actor</td>
+                    <td>@a.Action</td>
+                    <td>@a.Entity @a.EntityId</td>
+                    <td><small>@a.Detail</small></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</RoleGate>
+
+@code {
+    private List<AuditEntry> _entries = [];
+
+    protected override async Task OnInitializedAsync() => _entries = await Audit.RecentAsync();
+}

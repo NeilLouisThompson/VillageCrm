@@ -1,0 +1,35 @@
+@inject NoticeService Notices
+
+@if (_notices.Count == 0)
+{
+    <div class="card"><p class="lead">There are no notices at the moment.</p></div>
+}
+@foreach (var n in _notices)
+{
+    <article class="card notice">
+        <h2>@n.Title</h2>
+        <p class="lead">@n.Body</p>
+        <p class="muted">Posted @Format.Date(n.PostedAt) by @n.PostedBy</p>
+        @if (OnExpire.HasDelegate)
+        {
+            <button class="btn small secondary" @onclick="() => Expire(n)">Take down</button>
+        }
+    </article>
+}
+
+@code {
+    [Parameter] public EventCallback<Notice> OnExpire { get; set; }
+
+    /// <summary>Change to force a reload after the parent adds a notice.</summary>
+    [Parameter] public int Version { get; set; }
+
+    private List<Notice> _notices = [];
+
+    protected override async Task OnParametersSetAsync() => _notices = await Notices.ActiveAsync();
+
+    private async Task Expire(Notice notice)
+    {
+        await OnExpire.InvokeAsync(notice);
+        _notices = await Notices.ActiveAsync();
+    }
+}

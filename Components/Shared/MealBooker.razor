@@ -1,0 +1,129 @@
+@inject RestaurantService Restaurant
+@inject IOptions<VillageOptions> Options
+
+@* Resident meal booking: tap a day, then book or cancel each meal. Used on /meals and the kiosk. *@
+
+<ErrorMessage Message="@_error" />
+
+<MonthCalendar @bind-Month="_month" @bind-Month:after="LoadMonthAsync" Selected="_date" Badges="_badges"
+               MinDate="DateTime.Today" OnSelect="SelectAsync" />
+
+@if (_date is { } day)
+{
+    <h2>@day.ToString("dddd d MMMM")</h2>
+    @if (_sittings.Count == 0)
+    {
+        <p class="lead">The dining room is closed on this day.</p>
+    }
+    @foreach (var s in _sittings)
+    {
+        var mine = _mine.FirstOrDefault(b => b.SittingId == s.Id && b.Date == day);
+        var menu = _menus.GetValueOrDefault(s.Id);
+        var open = Restaurant.IsOpen(s, day);
+        <div class="card meal @(s.IsSpecialEvent ? "special" : "")">
+            <h3>@(s.IsSpecialEvent ? "⭐ " : "")@s.Name at @s.StartsAt.ToString("HH:mm")</h3>
+            @if (!string.IsNullOrEmpty(s.Description))
+            {
+                <p>@s.Description</p>
+            }
+            <p class="lead">@(menu?.Dishes is { Length: > 0 } dishes ? dishes : "Menu to follow")</p>
+            @if (menu?.DietaryOptions is { Length: > 0 } extras)
+            {
+                <p>Also available: @extras</p>
+            }
+            <p class="muted">@Format.Money(s.Price) per person. Book by @RestaurantService.CutOff(s, day).ToString("HH:mm, ddd d MMM").</p>
+
+            @if (mine is not null)
+            {
+                <p class="lead booked">✔ You are booked@(mine.Guests > 0 ? $" with {mine.Guests} guest(s)" : "").</p>
+                @if (open && mine.Status == BookingStatus.Booked)
+                {
+                    <button class="btn big secondary" @onclick="() => CancelAsync(mine)">Cancel my booking</button>
+                }
+            }
+            else if (!open)
+            {
+                <p class="lead">Bookings are closed. Please call reception.</p>
+            }
+            else
+            {
+                <div class="stepper">
+                    <button class="btn big secondary" aria-label="One guest fewer" disabled="@(Guests(s.Id) == 0)" @onclick="() => ChangeGuests(s.Id, -1)">−</button>
+                    <span class="lead">@(Guests(s.Id) == 0 ? "Just me" : $"Me + {Guests(s.Id)} guest(s)")</span>
+                    <button class="btn big secondary" aria-label="One guest more" disabled="@(Guests(s.Id) >= Options.Value.MaxGuestsPerBooking)" @onclick="() => ChangeGuests(s.Id, 1)">+</button>
+                </div>
+                <div class="actions">
+                    <button class="btn big" @onclick="() => BookAsync(s)">Book @s.Name.ToLowerInvariant()</button>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public int ResidentId { get; set; }
+    [Parameter, EditorRequired] public string BookedBy { get; set; } = "";
+
+    private DateTime _month = DateTime.Today;
+    private DateTime? _date;
+    private Dictionary<DateTime, string> _badges = new();
+    private List<MealBooking> _mine = [];
+    private List<Sitting> _sittings = [];
+    private Dictionary<int, MenuEntry?> _menus = new();
+    private readonly Dictionary<int, int> _guests = new();
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadMonthAsync();
+        await SelectAsync(_date ?? DateTime.Today);
+    }
+
+    private int Guests(int sittingId) => _guests.GetValueOrDefault(sittingId);
+
+    private void ChangeGuests(int sittingId, int delta) => _guests[sittingId] = Math.Max(0, Guests(sittingId) + delta);
+
+    private async Task LoadMonthAsync()
+    {
+        var first = new DateTime(_month.Year, _month.Month, 1);
+        var last = first.AddMonths(1).AddDays(-1);
+        _mine = await Restaurant.BookingsForResidentAsync(ResidentId, first, last);
+        _badges = _mine.GroupBy(b => b.Date).ToDictionary(g => g.Key, g => "✔ " + string.Join(", ", g.Select(b => b.SittingName)));
+        foreach (var e in (await Restaurant.AllSittingsAsync()).Where(s => s.Active && s.EventDate >= first && s.EventDate <= last))
+        {
+            var date = e.EventDate!.Value.Date;
+            _badges[date] = _badges.TryGetValue(date, out var existing) ? $"{existing} ⭐" : $"⭐ {e.Name}";
+        }
+    }
+
+    private async Task SelectAsync(DateTime date)
+    {
+        _error = null;
+        _date = date.Date;
+        _sittings = await Restaurant.SittingsForAsync(date);
+        _menus = new();
+        foreach (var s in _sittings)
+        {
+            _menus[s.Id] = await Restaurant.MenuAsync(date, s.Id);
+        }
+    }
+
+    private async Task BookAsync(Sitting sitting) => await RunAsync(() => Restaurant.BookAsync(ResidentId, _date!.Value, sitting.Id, Guests(sitting.Id), BookedBy));
+
+    private async Task CancelAsync(MealBooking booking) => await RunAsync(() => Restaurant.CancelAsync(booking.Id, ResidentId));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _error = null;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            _error = ex.Message;
+        }
+        await LoadMonthAsync();
+        await SelectAsync(_date!.Value);
+    }
+}

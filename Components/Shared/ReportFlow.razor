@@ -1,0 +1,128 @@
+@inject JobCardService Jobs
+@inject ResidentService Residents
+@inject IOptions<VillageOptions> Options
+
+@* Resident flow: category tile -> summary with Send. Staff flow adds a "who is it for" step first. *@
+
+@if (_submitted is not null)
+{
+    <div class="card success" role="status">
+        <h2>Thank you</h2>
+        <p class="lead">We have received your request about <strong>@_submitted.Category.ToLowerInvariant()</strong>.</p>
+        <p>Reception will let you know who is coming and when.</p>
+        <button class="btn big" @onclick="StartAgain">Report another problem</button>
+    </div>
+}
+else if (ResidentId is null && _residentId == 0)
+{
+    <div class="card">
+        <h2>Who is the problem for?</h2>
+        <label for="resident">Resident</label>
+        <select id="resident" class="big-input" @bind="_pickedResident">
+            <option value="0">-- Choose a resident --</option>
+            @foreach (var r in _residents)
+            {
+                <option value="@r.Id">@r.FullName (Unit @r.Unit)</option>
+            }
+        </select>
+        <div class="actions">
+            <button class="btn big" disabled="@(_pickedResident == 0)" @onclick="() => _residentId = _pickedResident">Next</button>
+        </div>
+    </div>
+}
+else if (_category == "")
+{
+    <div class="card">
+        <h2>What is the problem?</h2>
+        <div class="picker">
+            @foreach (var c in Options.Value.JobCategories)
+            {
+                <button class="pick" @onclick="() => _category = c">
+                    <span class="pick-icon" aria-hidden="true">@Icon(c)</span>
+                    <span>@c</span>
+                </button>
+            }
+        </div>
+        @if (ResidentId is null)
+        {
+            <div class="actions">
+                <button class="btn secondary big" @onclick="() => _residentId = 0">Back</button>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="card">
+        <h2>Check and send</h2>
+        <p class="lead"><span aria-hidden="true">@Icon(_category)</span> <strong>@_category</strong> problem at unit <strong>@Unit</strong>.</p>
+
+        <label for="desc">Anything to add? (you can leave this empty)</label>
+        <textarea id="desc" class="big-input" rows="3" @bind="_description"></textarea>
+
+        <p class="label">How urgent is it?</p>
+        <div class="picker small">
+            <button class="pick @(_priority == JobPriority.Normal ? "picked" : "")" @onclick="() => _priority = JobPriority.Normal">In the next few days</button>
+            <button class="pick @(_priority == JobPriority.Urgent ? "picked" : "")" @onclick="() => _priority = JobPriority.Urgent">Today - urgent</button>
+            <button class="pick @(_priority == JobPriority.Low ? "picked" : "")" @onclick="() => _priority = JobPriority.Low">Not urgent</button>
+        </div>
+
+        <div class="actions">
+            <button class="btn secondary big" @onclick='() => _category = ""'>Back</button>
+            <button class="btn big" @onclick="Submit">Send request</button>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Set when a resident reports for themselves. Null lets staff choose the resident.</summary>
+    [Parameter] public int? ResidentId { get; set; }
+
+    /// <summary>Staff member logging on behalf of the resident; null when the resident reports.</summary>
+    [Parameter] public string? OnBehalfOf { get; set; }
+
+    private List<Resident> _residents = [];
+    private int _residentId;
+    private int _pickedResident;
+    private string _category = "";
+    private string _description = "";
+    private JobPriority _priority = JobPriority.Normal;
+    private JobCard? _submitted;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _residents = await Residents.ListAsync();
+        if (ResidentId is { } id)
+        {
+            _residentId = id;
+        }
+    }
+
+    private string Unit => _residents.FirstOrDefault(r => r.Id == _residentId)?.Unit ?? "";
+
+    private async Task Submit()
+    {
+        _submitted = await Jobs.LogAsync(_residentId, _category, _description, _priority, OnBehalfOf);
+    }
+
+    private void StartAgain()
+    {
+        _submitted = null;
+        _residentId = ResidentId ?? 0;
+        _pickedResident = 0;
+        _category = "";
+        _description = "";
+        _priority = JobPriority.Normal;
+    }
+
+    private static string Icon(string category) => category switch
+    {
+        "Plumbing" => "🚰",
+        "Electrical" => "💡",
+        "Garden" => "🌳",
+        "Cleaning" => "🧹",
+        "Pest" => "🐜",
+        "Security" => "🔒",
+        _ => "❓"
+    };
+}

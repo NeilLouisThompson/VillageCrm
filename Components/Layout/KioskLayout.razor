@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+@inject IOptions<VillageOptions> Options
+
+<div class="app kiosk">
+    <div class="emergency" role="note">
+        This is NOT for emergencies. Use your panic button or call @Options.Value.EmergencyPhone.
+    </div>
+    <main>
+        @Body
+    </main>
+    <footer class="help-footer">
+        Need help? Call reception on @Options.Value.ReceptionPhone.
+    </footer>
+</div>

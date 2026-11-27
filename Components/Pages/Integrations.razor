@@ -1,0 +1,62 @@
+@page "/integrations"
+@inherits ViewerAwarePage
+@inject OutboxService Outbox
+
+<PageTitle>Integrations</PageTitle>
+
+<h1>Pastel and Pilot sync</h1>
+<p class="help">
+    Mock connections only: nothing leaves this server. Every posting has a unique reference, so it is never sent twice.
+    Set <code>Village:SimulatePastelLocked</code> to <code>true</code> in appsettings.json to see a month-end lock and retry.
+</p>
+
+<RoleGate Area="Area.Integrations">
+    <div class="stats">
+        @foreach (var g in _messages.GroupBy(m => (m.Target, m.Status)).OrderBy(g => g.Key.Target).ThenBy(g => g.Key.Status))
+        {
+            <div class="stat"><span class="stat-value">@g.Count()</span>@g.Key.Target - @g.Key.Status</div>
+        }
+    </div>
+
+    <div class="actions">
+        <button class="btn" @onclick="Process">Send waiting messages now</button>
+    </div>
+    @if (_result is not null)
+    {
+        <p role="status">@_result</p>
+    }
+
+    <table class="big-table">
+        <thead><tr><th>Created</th><th>To</th><th>Type</th><th>Reference</th><th>Status</th><th>Attempts</th><th>Details</th></tr></thead>
+        <tbody>
+            @foreach (var m in _messages)
+            {
+                <tr>
+                    <td>@Format.When(m.CreatedAt)</td>
+                    <td>@m.Target</td>
+                    <td>@m.Type</td>
+                    <td><small>@m.Reference</small></td>
+                    <td><span class="pill @(m.Status switch { OutboxStatus.Sent => "ok", OutboxStatus.Failed => "urgent", _ => "normal" })">@m.Status</span></td>
+                    <td>@m.Attempts</td>
+                    <td><small>@(m.LastError ?? m.Payload)</small></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</RoleGate>
+
+@code {
+    private List<OutboxMessage> _messages = [];
+    private string? _result;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _messages = await Outbox.ListAsync();
+
+    private async Task Process()
+    {
+        var (sent, failed) = await Outbox.ProcessAsync();
+        _result = $"{sent} sent, {failed} failed (failed messages are retried next time).";
+        await LoadAsync();
+    }
+}

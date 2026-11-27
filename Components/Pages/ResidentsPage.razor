@@ -1,0 +1,117 @@
+@page "/residents"
+@inherits ViewerAwarePage
+@inject ResidentService Residents
+
+<PageTitle>Residents</PageTitle>
+
+<h1>Residents</h1>
+
+<RoleGate Area="Area.Residents">
+    <ErrorMessage Message="@Error" />
+
+    @if (_pending.Count > 0)
+    {
+        <div class="card">
+            <h2>Contact changes waiting for checking (@_pending.Count)</h2>
+            <table class="big-table">
+                <thead><tr><th>Resident</th><th>New phone</th><th>New email</th><th>New next of kin</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var c in _pending)
+                    {
+                        <tr>
+                            <td>@c.ResidentName</td><td>@c.Phone</td><td>@c.Email</td><td>@c.NextOfKin</td>
+                            <td>
+                                <button class="btn small" @onclick="() => Review(c, true)">Accept</button>
+                                <button class="btn small secondary" @onclick="() => Review(c, false)">Reject</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <label for="search">Search by name or unit</label>
+    <input id="search" class="big-input" type="search" @bind="_search" @bind:event="oninput" @bind:after="LoadAsync" />
+    <label class="check"><input type="checkbox" @bind="_includeInactive" @bind:after="LoadAsync" /> Include residents who have left or passed away</label>
+
+    <table class="big-table">
+        <thead><tr><th>Name</th><th>Unit</th><th>Care level</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var r in _residents)
+            {
+                <tr>
+                    <td>@r.FullName</td>
+                    <td>@r.Unit</td>
+                    <td>@Format.Words(r.CareLevel)</td>
+                    <td>@Format.Words(r.Status)</td>
+                    <td><a class="btn small" href="/residents/@r.Id">Open</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <details class="card">
+        <summary>Add a resident</summary>
+        <label for="name">Full name</label>
+        <input id="name" class="big-input" @bind="_new.FullName" />
+        <label for="idno">ID number</label>
+        <input id="idno" class="big-input" @bind="_new.IdNumber" />
+        <label for="unit">Unit</label>
+        <input id="unit" class="big-input" @bind="_new.Unit" />
+        <label for="occ">Date of occupation</label>
+        <input id="occ" type="date" class="big-input" @bind="_new.OccupationDate" />
+        <label for="contract">Contract type</label>
+        <select id="contract" class="big-input" @bind="_new.ContractType">
+            @foreach (var c in Enum.GetValues<ContractType>())
+            {
+                <option value="@c">@Format.Words(c)</option>
+            }
+        </select>
+        <label for="care">Care level</label>
+        <select id="care" class="big-input" @bind="_new.CareLevel">
+            @foreach (var c in Enum.GetValues<CareLevel>())
+            {
+                <option value="@c">@Format.Words(c)</option>
+            }
+        </select>
+        <label for="phone">Phone</label>
+        <input id="phone" class="big-input" @bind="_new.Phone" />
+        <label for="nok">Next of kin</label>
+        <input id="nok" class="big-input" @bind="_new.NextOfKin" />
+        <div class="actions"><button class="btn" @onclick="Add">Add resident</button></div>
+    </details>
+</RoleGate>
+
+@code {
+    private string _search = "";
+    private bool _includeInactive;
+    private List<Resident> _residents = [];
+    private List<ContactChangeRequest> _pending = [];
+    private Resident _new = NewResident();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _residents = await Residents.ListAsync(_search, _includeInactive);
+        _pending = await Residents.PendingChangesAsync();
+    }
+
+    private async Task Review(ContactChangeRequest change, bool approve)
+    {
+        await TryAsync(() => Residents.ReviewContactChangeAsync(change.Id, approve, Viewer.Name));
+        await LoadAsync();
+    }
+
+    private async Task Add()
+    {
+        if (await TryAsync(() => Residents.AddAsync(_new, Viewer.Name)))
+        {
+            _new = NewResident();
+            await LoadAsync();
+        }
+    }
+
+    private static Resident NewResident() => new() { OccupationDate = DateTime.Today };
+}

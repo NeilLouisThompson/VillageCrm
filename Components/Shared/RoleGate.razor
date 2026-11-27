@@ -1,0 +1,18 @@
+@inject ViewerContext Viewer
+
+@if (Access.Allows(Viewer.Role, Area))
+{
+    @ChildContent
+}
+else
+{
+    <div class="card">
+        <p>This page is for: <strong>@Access.WhoMay(Area)</strong>.</p>
+        <p>You are viewing as <strong>@Access.Label(Viewer.Role)</strong>. Change the role in the top bar to see it.</p>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Area Area { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,24 @@
+@page "/directory"
+@inherits ViewerAwarePage
+@inject ResidentService Residents
+
+<PageTitle>Resident directory</PageTitle>
+
+<h1>Resident directory</h1>
+<p class="lead">Only residents who said yes are listed. You can change your choice under "My details".</p>
+
+<table class="big-table">
+    <thead><tr><th>Name</th><th>Unit</th></tr></thead>
+    <tbody>
+        @foreach (var r in _residents)
+        {
+            <tr><td>@r.FullName</td><td>@r.Unit</td></tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private List<Resident> _residents = [];
+
+    protected override async Task OnInitializedAsync() => _residents = await Residents.DirectoryAsync();
+}

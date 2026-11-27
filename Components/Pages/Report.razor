@@ -1,0 +1,15 @@
+@page "/report"
+@inherits ViewerAwarePage
+
+<PageTitle>Report a problem</PageTitle>
+
+<h1>@(Viewer.IsResident ? "Report a problem" : "Log a job for a resident")</h1>
+
+@if (Viewer.IsResident)
+{
+    <ReportFlow @key="Viewer.ResidentId" ResidentId="Viewer.ResidentId" />
+}
+else
+{
+    <ReportFlow @key="Viewer.Name" OnBehalfOf="@Viewer.Name" />
+}

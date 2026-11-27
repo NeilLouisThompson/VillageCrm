@@ -1,0 +1,15 @@
+@page "/my-requests"
+@inherits ViewerAwarePage
+
+<PageTitle>My requests</PageTitle>
+
+<h1>My requests</h1>
+
+@if (Viewer.ResidentId is { } id)
+{
+    <RequestList @key="id" ResidentId="id" ResidentName="@Viewer.Name" />
+}
+else
+{
+    <div class="card"><p>This page shows a resident's own requests. Choose "Resident" in the top bar.</p></div>
+}

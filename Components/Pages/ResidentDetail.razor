@@ -1,0 +1,278 @@
+@page "/residents/{Id:int}"
+@inherits ViewerAwarePage
+@inject ResidentService Residents
+@inject JobCardService Jobs
+
+<RoleGate Area="Area.Residents">
+    @if (_resident is null)
+    {
+        <h1>Resident not found</h1>
+        <p><a href="/residents">Back to residents</a></p>
+    }
+    else
+    {
+        <PageTitle>@_resident.FullName</PageTitle>
+        <h1>@_resident.FullName</h1>
+        <p><a href="/residents">Back to residents</a></p>
+
+        <ErrorMessage Message="@Error" />
+
+        <div class="grid">
+            <div class="card">
+                <h2>Profile</h2>
+                @if (_editing)
+                {
+                    <label for="unit">Unit</label>
+                    <input id="unit" class="big-input" @bind="_resident.Unit" />
+                    <label for="phone">Phone</label>
+                    <input id="phone" class="big-input" @bind="_resident.Phone" />
+                    <label for="email">Email</label>
+                    <input id="email" class="big-input" @bind="_resident.Email" />
+                    <label for="lang">Language</label>
+                    <input id="lang" class="big-input" @bind="_resident.Language" />
+                    <label for="nok">Next of kin</label>
+                    <input id="nok" class="big-input" @bind="_resident.NextOfKin" />
+                    <label for="emerg">Emergency contact</label>
+                    <input id="emerg" class="big-input" @bind="_resident.EmergencyContact" />
+                    <label for="poa">Power of attorney / curator</label>
+                    <input id="poa" class="big-input" @bind="_resident.PowerOfAttorney" />
+                    <label for="doc">Doctor</label>
+                    <input id="doc" class="big-input" @bind="_resident.Doctor" />
+                    <label for="hosp">Preferred hospital</label>
+                    <input id="hosp" class="big-input" @bind="_resident.PreferredHospital" />
+                    <label for="aid">Medical aid</label>
+                    <input id="aid" class="big-input" @bind="_resident.MedicalAid" />
+                    <label for="diet">Dietary flag (shared with kitchen, no diagnoses)</label>
+                    <input id="diet" class="big-input" @bind="_resident.DietaryFlag" />
+                    <div class="actions">
+                        <button class="btn" @onclick="SaveProfile">Save</button>
+                        <button class="btn secondary" @onclick="LoadAsync">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <dl>
+                        <dt>Account number</dt><dd>@_resident.AccountNumber</dd>
+                        <dt>ID number</dt><dd>@_resident.IdNumber</dd>
+                        <dt>Unit</dt><dd>@_resident.Unit</dd>
+                        <dt>Contract</dt><dd>@Format.Words(_resident.ContractType), since @Format.Date(_resident.OccupationDate)</dd>
+                        <dt>Care level</dt><dd>@Format.Words(_resident.CareLevel)</dd>
+                        <dt>Status</dt><dd>@Format.Words(_resident.Status)</dd>
+                        <dt>Phone</dt><dd>@_resident.Phone</dd>
+                        <dt>Email</dt><dd>@_resident.Email</dd>
+                        <dt>Language</dt><dd>@_resident.Language</dd>
+                        <dt>Next of kin</dt><dd>@_resident.NextOfKin</dd>
+                        <dt>Emergency contact</dt><dd>@_resident.EmergencyContact</dd>
+                        <dt>Power of attorney</dt><dd>@_resident.PowerOfAttorney</dd>
+                        <dt>Doctor / hospital</dt><dd>@_resident.Doctor / @_resident.PreferredHospital</dd>
+                        <dt>Medical aid</dt><dd>@_resident.MedicalAid</dd>
+                        <dt>Dietary flag (kitchen)</dt><dd>@_resident.DietaryFlag</dd>
+                    </dl>
+                    <button class="btn secondary" @onclick="() => _editing = true">Edit profile</button>
+                }
+            </div>
+
+            <div class="card">
+                <h2>Medical record</h2>
+                @if (!Access.Allows(Viewer.Role, Area.Medical))
+                {
+                    <p class="restricted">Restricted to clinical staff. You are viewing as <strong>@Access.Label(Viewer.Role)</strong>.</p>
+                }
+                else if (_medical is null)
+                {
+                    <p>Opening the medical record is recorded in the audit log.</p>
+                    <button class="btn" @onclick="OpenMedical">Open medical record</button>
+                }
+                else
+                {
+                    <label for="cond">Conditions</label>
+                    <textarea id="cond" class="big-input" rows="2" @bind="_medical.Conditions"></textarea>
+                    <label for="med">Medication</label>
+                    <textarea id="med" class="big-input" rows="2" @bind="_medical.Medication"></textarea>
+                    <label for="all">Allergies</label>
+                    <input id="all" class="big-input" @bind="_medical.Allergies" />
+                    <label for="dnr">Advance directive / DNR</label>
+                    <input id="dnr" class="big-input" @bind="_medical.AdvanceDirective" />
+                    <label for="mob">Mobility aids</label>
+                    <input id="mob" class="big-input" @bind="_medical.MobilityAids" />
+                    <div class="actions">
+                        <button class="btn" @onclick="SaveMedical">Save medical record</button>
+                        <button class="btn secondary" @onclick="() => _medical = null">Close</button>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <h2>Consent (POPIA)</h2>
+                <label class="check"><input type="checkbox" @bind="_resident.DirectoryOptIn" /> Listed in resident directory</label>
+                <label class="check"><input type="checkbox" @bind="_resident.PhotoConsent" /> Photo consent</label>
+                <label class="check"><input type="checkbox" @bind="_resident.DataSharingConsent" /> Share dietary flag with kitchen (Pilot)</label>
+                <label class="check"><input type="checkbox" @bind="_resident.WelfareMonitoringConsent" /> Welfare monitoring (meal attendance)</label>
+                <div class="actions"><button class="btn secondary" @onclick="SaveConsent">Save consent</button></div>
+            </div>
+
+            <div class="card">
+                <h2>Kiosk PIN</h2>
+                <p>@(_resident.KioskPinHash == "" ? "No PIN set. The resident cannot see their account on the kiosk." : "A PIN is set.")</p>
+                <label for="pin">New 4-digit PIN</label>
+                <input id="pin" class="big-input" type="password" inputmode="numeric" maxlength="4" autocomplete="off" @bind="_newPin" />
+                <div class="actions"><button class="btn secondary" @onclick="SetPin">Set PIN</button></div>
+                @if (_pinSaved)
+                {
+                    <p role="status">PIN saved.</p>
+                }
+            </div>
+        </div>
+
+        @if (Viewer.Role is UserRole.Reception or UserRole.Manager)
+        {
+            <AccountStatementView AccountNumber="@_resident.AccountNumber" />
+        }
+
+        <div class="card">
+            <h2>Movement log</h2>
+            <table class="big-table">
+                <thead><tr><th>When</th><th>Type</th><th>Note</th><th>Recorded by</th></tr></thead>
+                <tbody>
+                    @foreach (var m in _resident.Movements)
+                    {
+                        <tr>
+                            <td>@Format.When(m.When)</td>
+                            <td>@Format.Words(m.Type)</td>
+                            <td>@m.Note</td>
+                            <td>@m.RecordedBy</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <h3>Record a movement</h3>
+            <label for="mtype">Movement type</label>
+            <select id="mtype" class="big-input" @bind="_movementType">
+                @foreach (var t in Enum.GetValues<MovementType>())
+                {
+                    <option value="@t">@Format.Words(t)</option>
+                }
+            </select>
+            @if (_movementType == MovementType.CareLevelChange)
+            {
+                <label for="newcare">New care level</label>
+                <select id="newcare" class="big-input" @bind="_newCareLevel">
+                    @foreach (var c in Enum.GetValues<CareLevel>())
+                    {
+                        <option value="@c">@Format.Words(c)</option>
+                    }
+                </select>
+            }
+            @if (_movementType == MovementType.UnitTransfer)
+            {
+                <label for="newunit">New unit</label>
+                <input id="newunit" class="big-input" @bind="_newUnit" />
+            }
+            <label for="mnote">Reason / note</label>
+            <input id="mnote" class="big-input" @bind="_movementNote" />
+            <div class="actions"><button class="btn" @onclick="AddMovement">Save movement</button></div>
+        </div>
+
+        <div class="card">
+            <h2>Job cards</h2>
+            @if (_jobs.Count == 0)
+            {
+                <p>No job cards for this resident.</p>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var j in _jobs)
+                    {
+                        <li>No. @j.Id - @j.Category: @j.Description (<strong>@Format.Words(j.Status)</strong>)</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+</RoleGate>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Resident? _resident;
+    private MedicalRecord? _medical;
+    private List<JobCard> _jobs = [];
+    private bool _editing;
+    private MovementType _movementType = MovementType.LeftVillage;
+    private CareLevel _newCareLevel = CareLevel.Assisted;
+    private string _newUnit = "";
+    private string _movementNote = "";
+    private string _newPin = "";
+    private bool _pinSaved;
+
+    private async Task SetPin()
+    {
+        _pinSaved = await TryAsync(() => Residents.SetKioskPinAsync(Id, _newPin, Viewer.Name));
+        _newPin = "";
+        if (_pinSaved)
+        {
+            await LoadAsync();
+        }
+    }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    protected override Task OnViewerChangedAsync()
+    {
+        _medical = null;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _editing = false;
+        if (!Access.Allows(Viewer.Role, Area.Residents))
+        {
+            _resident = null;
+            return;
+        }
+        _resident = await Residents.GetAsync(Id);
+        if (_resident is not null)
+        {
+            await Residents.GetForStaffAsync(Id, Viewer.Name);
+            _jobs = await Jobs.ListAsync(Id);
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        if (await TryAsync(() => Residents.UpdateProfileAsync(_resident!, Viewer.Name)))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task SaveConsent()
+    {
+        var r = _resident!;
+        await TryAsync(() => Residents.UpdateConsentAsync(r.Id, r.DirectoryOptIn, r.PhotoConsent, r.DataSharingConsent, r.WelfareMonitoringConsent, Viewer.Name));
+    }
+
+    private async Task OpenMedical() =>
+        await TryAsync(async () => _medical = await Residents.GetMedicalAsync(Id, Viewer.Role, Viewer.Name));
+
+    private async Task SaveMedical()
+    {
+        if (await TryAsync(() => Residents.SaveMedicalAsync(_medical!, Viewer.Role, Viewer.Name)))
+        {
+            _medical = null;
+        }
+    }
+
+    private async Task AddMovement()
+    {
+        if (await TryAsync(() => Residents.RecordMovementAsync(Id, _movementType, _movementNote, Viewer.Name, _newCareLevel, _newUnit)))
+        {
+            _movementNote = "";
+            _newUnit = "";
+            await LoadAsync();
+        }
+    }
+}

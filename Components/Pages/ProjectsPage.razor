@@ -1,0 +1,67 @@
+@page "/projects"
+@inherits ViewerAwarePage
+@inject ProjectService Projects
+
+<PageTitle>Projects</PageTitle>
+
+<h1>Capital projects</h1>
+
+<RoleGate Area="Area.Projects">
+    <ErrorMessage Message="@Error" />
+
+    <table class="big-table">
+        <thead><tr><th>Project</th><th>Status</th><th>Contractor</th><th>Budget (incl. variations)</th><th>Spent</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var p in _projects)
+            {
+                <tr>
+                    <td>@p.Name<br /><small>@p.CostCentre</small></td>
+                    <td>@Format.Words(p.Status)</td>
+                    <td>@p.AppointedContractor</td>
+                    <td>@Format.Money(p.RevisedBudget)</td>
+                    <td>
+                        @Format.Money(p.Actual)
+                        @if (p.Actual > p.RevisedBudget)
+                        {
+                            <span class="pill urgent">Over budget</span>
+                        }
+                    </td>
+                    <td><a class="btn small" href="/projects/@p.Id">Open</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <details class="card">
+        <summary>New project</summary>
+        <label for="pname">Name</label>
+        <input id="pname" class="big-input" @bind="_name" />
+        <label for="pscope">Scope</label>
+        <textarea id="pscope" class="big-input" rows="2" @bind="_scope"></textarea>
+        <label for="pcc">Cost centre</label>
+        <input id="pcc" class="big-input" @bind="_costCentre" />
+        <label for="pbud">Budget</label>
+        <input id="pbud" type="number" step="0.01" class="big-input" @bind="_budget" />
+        <div class="actions"><button class="btn" @onclick="Create">Create project</button></div>
+    </details>
+</RoleGate>
+
+@code {
+    private List<Project> _projects = [];
+    private string _name = "", _scope = "", _costCentre = "";
+    private decimal _budget;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _projects = await Projects.ListAsync();
+
+    private async Task Create()
+    {
+        if (await TryAsync(() => Projects.CreateAsync(_name, _scope, _costCentre, _budget)))
+        {
+            _name = _scope = _costCentre = "";
+            _budget = 0;
+            await LoadAsync();
+        }
+    }
+}

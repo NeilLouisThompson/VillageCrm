@@ -1,0 +1,241 @@
+@page "/restaurant"
+@inherits ViewerAwarePage
+@inject RestaurantService Restaurant
+@inject ResidentService Residents
+@inject IOptions<VillageOptions> Options
+
+<PageTitle>Restaurant</PageTitle>
+
+<h1>Restaurant</h1>
+
+<RoleGate Area="Area.Restaurant">
+    <ErrorMessage Message="@Error" />
+
+    @if (_welfare.Count > 0)
+    {
+        <div class="card warning">
+            <h2>Welfare check: missed meals (@_welfare.Count)</h2>
+            <p>These residents agreed to welfare checks and have not eaten in the dining room for @Options.Value.WelfareNoMealDays days or more.</p>
+            <ul>
+                @foreach (var w in _welfare)
+                {
+                    <li><strong>@w.Resident.FullName</strong> (unit @w.Resident.Unit): last meal @(w.LastMeal is null ? "not recorded" : Format.Date(w.LastMeal))</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <MonthCalendar @bind-Month="_month" @bind-Month:after="LoadMonthAsync" Selected="_date" Badges="_badges" OnSelect="SelectAsync" />
+
+    <h2>@_date.ToString("dddd d MMMM yyyy")</h2>
+    @if (_sittings.Count == 0)
+    {
+        <p>No meals are served on this day.</p>
+    }
+
+    @foreach (var s in _sittings)
+    {
+        var lines = _kitchen.GetValueOrDefault(s.Id) ?? [];
+        var covers = lines.Sum(l => 1 + l.Guests);
+        var menu = _menus[s.Id];
+        <div class="card meal @(s.IsSpecialEvent ? "special" : "")">
+            <h3>@(s.IsSpecialEvent ? "⭐ " : "")@s.Name at @s.StartsAt.ToString("HH:mm")</h3>
+            <p>
+                <strong>@covers of @s.Capacity seats booked.</strong>
+                Bookings @(Restaurant.IsOpen(s, _date) ? "close" : "closed") at @RestaurantService.CutOff(s, _date).ToString("HH:mm, ddd d MMM").
+            </p>
+
+            @if (CanManage)
+            {
+                <label>Menu <textarea class="big-input" rows="2" @bind="menu.Dishes"></textarea></label>
+                <label>Dietary options <input class="big-input" @bind="menu.DietaryOptions" /></label>
+                <button class="btn small secondary" @onclick="() => Run(() => Restaurant.SaveMenuAsync(_date, s.Id, menu.Dishes, menu.DietaryOptions, Viewer.Role))">Save menu</button>
+            }
+            else
+            {
+                <p>@(menu.Dishes == "" ? "No menu yet." : menu.Dishes)</p>
+            }
+
+            <h4>Kitchen list</h4>
+            <p class="muted">Dietary flags only, shown when the resident agreed to share them. No medical details.</p>
+            <table class="big-table">
+                <thead><tr><th>Resident</th><th>Unit</th><th>Guests</th><th>Dietary flag</th><th>Status</th><th class="no-print"></th></tr></thead>
+                <tbody>
+                    @foreach (var l in lines)
+                    {
+                        <tr>
+                            <td>@l.Name</td>
+                            <td>@l.Unit</td>
+                            <td>@l.Guests</td>
+                            <td>@l.DietaryFlag</td>
+                            <td>@Format.Words(l.Status)</td>
+                            <td class="no-print">
+                                <button class="btn small" @onclick="() => Run(() => Restaurant.MarkAttendanceAsync(l.BookingId, true))">Came</button>
+                                <button class="btn small secondary" @onclick="() => Run(() => Restaurant.MarkAttendanceAsync(l.BookingId, false))">Did not come</button>
+                                @if (l.Status == BookingStatus.Booked)
+                                {
+                                    <button class="btn small secondary" @onclick="() => Run(() => Restaurant.CancelAsync(l.BookingId, overrideCutOff: CanManage))">Cancel</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <button class="btn small secondary" onclick="window.print()">Print kitchen list</button>
+
+            <div class="inline-form no-print">
+                <label>
+                    Book for
+                    <select @bind="_bookFor[s.Id]">
+                        <option value="0">-- Resident --</option>
+                        @foreach (var r in _residents)
+                        {
+                            <option value="@r.Id">@r.FullName (@r.Unit)</option>
+                        }
+                    </select>
+                </label>
+                <label>Guests <input type="number" min="0" max="@Options.Value.MaxGuestsPerBooking" @bind="_bookGuests[s.Id]" /></label>
+                <button class="btn small" disabled="@(_bookFor[s.Id] == 0)" @onclick="() => BookFor(s)">Book</button>
+                @if (CanManage)
+                {
+                    <span class="muted">Supervisors can book after the cut-off.</span>
+                }
+            </div>
+        </div>
+    }
+
+    @if (CanManage)
+    {
+        <details class="card no-print">
+            <summary>Meal times, seats and booking cut-off</summary>
+            <table class="big-table">
+                <thead><tr><th>Meal</th><th>Date</th><th>Starts</th><th>Seats</th><th>Cut-off (minutes before)</th><th>Price</th><th>Active</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var s in _allSittings)
+                    {
+                        <tr>
+                            <td><input @bind="s.Name" aria-label="Name" /></td>
+                            <td>@(s.EventDate is null ? "Every day" : Format.Date(s.EventDate))</td>
+                            <td><input type="time" @bind="s.StartsAt" aria-label="Starts" /></td>
+                            <td><input type="number" min="1" @bind="s.Capacity" aria-label="Seats" /></td>
+                            <td>
+                                <input type="number" min="0" step="15" @bind="s.CutOffMinutes" aria-label="Cut-off minutes" />
+                                <br /><small>Closes @CutOffText(s)</small>
+                            </td>
+                            <td><input type="number" min="0" step="0.01" @bind="s.Price" aria-label="Price" /></td>
+                            <td><input type="checkbox" @bind="s.Active" aria-label="Active" /></td>
+                            <td><button class="btn small" @onclick="() => Run(() => Restaurant.SaveSittingAsync(s, Viewer.Role))">Save</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <h3>Add a special event</h3>
+            <div class="inline-form">
+                <label>Name <input @bind="_event.Name" placeholder="Christmas lunch" /></label>
+                <label>Date <input type="date" @bind="_eventDate" /></label>
+                <label>Starts <input type="time" @bind="_event.StartsAt" /></label>
+                <label>Seats <input type="number" min="1" @bind="_event.Capacity" /></label>
+                <label>Cut-off (minutes before) <input type="number" min="0" step="60" @bind="_event.CutOffMinutes" /></label>
+                <label>Price <input type="number" min="0" step="0.01" @bind="_event.Price" /></label>
+            </div>
+            <label>Description <input class="big-input" @bind="_event.Description" /></label>
+            <button class="btn" @onclick="AddEvent">Add event</button>
+        </details>
+    }
+</RoleGate>
+
+@code {
+    private DateTime _month = DateTime.Today;
+    private DateTime _date = DateTime.Today;
+    private Dictionary<DateTime, string> _badges = new();
+    private List<Sitting> _sittings = [];
+    private List<Sitting> _allSittings = [];
+    private Dictionary<int, MenuEntry> _menus = new();
+    private Dictionary<int, List<KitchenLine>> _kitchen = new();
+    private List<Resident> _residents = [];
+    private List<WelfareAlert> _welfare = [];
+    private Dictionary<int, int> _bookFor = new();
+    private Dictionary<int, int> _bookGuests = new();
+    private Sitting _event = NewEvent();
+    private DateTime _eventDate = DateTime.Today.AddDays(30);
+
+    private bool CanManage => Access.Allows(Viewer.Role, Area.ManageRestaurant);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _residents = (await Residents.ListAsync()).OrderBy(r => r.FullName).ToList();
+        await LoadMonthAsync();
+        await SelectAsync(_date);
+    }
+
+    private async Task LoadMonthAsync()
+    {
+        var first = new DateTime(_month.Year, _month.Month, 1);
+        var covers = await Restaurant.CoversByDayAsync(first, first.AddMonths(1).AddDays(-1));
+        _badges = covers.ToDictionary(c => c.Key, c => $"{c.Value} seats");
+        _allSittings = await Restaurant.AllSittingsAsync();
+        foreach (var e in _allSittings.Where(s => s.Active && s.EventDate >= first && s.EventDate < first.AddMonths(1)))
+        {
+            var date = e.EventDate!.Value.Date;
+            _badges[date] = _badges.TryGetValue(date, out var existing) ? $"⭐ {existing}" : $"⭐ {e.Name}";
+        }
+        _welfare = await Restaurant.WelfareAlertsAsync();
+    }
+
+    private async Task SelectAsync(DateTime date)
+    {
+        _date = date.Date;
+        _sittings = await Restaurant.SittingsForAsync(_date);
+        _menus = new();
+        _kitchen = new();
+        foreach (var s in _sittings)
+        {
+            _menus[s.Id] = await Restaurant.MenuAsync(_date, s.Id) ?? new MenuEntry { Date = _date, SittingId = s.Id };
+            _kitchen[s.Id] = await Restaurant.KitchenListAsync(_date, s.Id);
+            _bookFor.TryAdd(s.Id, 0);
+            _bookGuests.TryAdd(s.Id, 0);
+        }
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        await TryAsync(action);
+        await LoadMonthAsync();
+        await SelectAsync(_date);
+    }
+
+    private async Task BookFor(Sitting sitting)
+    {
+        await Run(() => Restaurant.BookAsync(_bookFor[sitting.Id], _date, sitting.Id, _bookGuests[sitting.Id], Viewer.Name, overrideCutOff: CanManage));
+        if (Error is null)
+        {
+            _bookFor[sitting.Id] = 0;
+            _bookGuests[sitting.Id] = 0;
+        }
+    }
+
+    private async Task AddEvent()
+    {
+        _event.EventDate = _eventDate.Date;
+        await Run(() => Restaurant.SaveSittingAsync(_event, Viewer.Role));
+        if (Error is null)
+        {
+            _event = NewEvent();
+        }
+    }
+
+    private static string CutOffText(Sitting s)
+    {
+        var cutOff = RestaurantService.CutOff(s, DateTime.Today);
+        var days = (DateTime.Today - cutOff.Date).Days;
+        return days switch
+        {
+            0 => $"{cutOff:HH:mm} the same day",
+            1 => $"{cutOff:HH:mm} the day before",
+            _ => $"{cutOff:HH:mm}, {days} days before"
+        };
+    }
+
+    private static Sitting NewEvent() => new() { StartsAt = new TimeOnly(12, 0), Capacity = 100, CutOffMinutes = 3 * 24 * 60 };
+}

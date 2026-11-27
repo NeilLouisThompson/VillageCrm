@@ -1,0 +1,10 @@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="card error" role="alert">
+        <p>@Message</p>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+}

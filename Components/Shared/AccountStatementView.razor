@@ -1,0 +1,31 @@
+@inject VillageCrm.Integrations.IPastelGateway Pastel
+
+@if (_statement is { } s)
+{
+    <div class="card">
+        <h2>My account</h2>
+        <p class="lead">Amount owing: <strong>@Format.Money(s.Balance)</strong></p>
+        <table class="big-table">
+            <thead><tr><th>Date</th><th>Item</th><th class="num">Amount</th></tr></thead>
+            <tbody>
+                @foreach (var line in s.Lines.OrderByDescending(l => l.Date))
+                {
+                    <tr>
+                        <td>@Format.Date(line.Date)</td>
+                        <td>@line.Description<br /><small class="muted">@line.Reference</small></td>
+                        <td class="num">@Format.Money(line.Amount)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="muted">Account @s.AccountNumber, from the finance system. Ask reception if something looks wrong.</p>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string AccountNumber { get; set; } = "";
+
+    private VillageCrm.Integrations.AccountStatement? _statement;
+
+    protected override async Task OnParametersSetAsync() => _statement = await Pastel.GetStatementAsync(AccountNumber);
+}

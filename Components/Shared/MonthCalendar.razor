@@ -1,0 +1,49 @@
+<div class="calendar">
+    <div class="cal-head">
+        <button class="btn secondary" @onclick="() => ChangeMonth(-1)" aria-label="Previous month">◀ @Month.AddMonths(-1).ToString("MMMM")</button>
+        <h2>@Month.ToString("MMMM yyyy")</h2>
+        <button class="btn secondary" @onclick="() => ChangeMonth(1)" aria-label="Next month">@Month.AddMonths(1).ToString("MMMM") ▶</button>
+    </div>
+    <div class="cal-grid">
+        @foreach (var name in DayNames)
+        {
+            <div class="cal-dow" aria-hidden="true">@name</div>
+        }
+        @for (var i = 0; i < Offset; i++)
+        {
+            <div></div>
+        }
+        @for (var day = 1; day <= DateTime.DaysInMonth(Month.Year, Month.Month); day++)
+        {
+            var date = new DateTime(Month.Year, Month.Month, day);
+            var badge = Badges?.GetValueOrDefault(date);
+            var label = badge is null ? date.ToString("dddd d MMMM") : $"{date:dddd d MMMM}: {badge}";
+            <button class="cal-day @(date == Selected ? "selected" : "") @(date == DateTime.Today ? "today" : "") @(badge is null ? "" : "marked")"
+                    disabled="@(MinDate is { } min && date < min.Date)"
+                    aria-label="@label"
+                    @onclick="() => OnSelect.InvokeAsync(date)">
+                <span class="cal-num">@day</span>
+                @if (badge is not null)
+                {
+                    <span class="cal-badge">@badge</span>
+                }
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly string[] DayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    /// <summary>Any date in the month to show; use @bind-Month.</summary>
+    [Parameter] public DateTime Month { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<DateTime> MonthChanged { get; set; }
+    [Parameter] public DateTime? Selected { get; set; }
+    [Parameter] public Dictionary<DateTime, string>? Badges { get; set; }
+    [Parameter] public EventCallback<DateTime> OnSelect { get; set; }
+    [Parameter] public DateTime? MinDate { get; set; }
+
+    private int Offset => ((int)new DateTime(Month.Year, Month.Month, 1).DayOfWeek + 6) % 7;
+
+    private Task ChangeMonth(int delta) => MonthChanged.InvokeAsync(new DateTime(Month.Year, Month.Month, 1).AddMonths(delta));
+}

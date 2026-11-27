@@ -1,0 +1,166 @@
+@page "/stock"
+@inherits ViewerAwarePage
+@inject StockService Stock
+
+<PageTitle>Stock</PageTitle>
+
+<h1>Stores</h1>
+<p class="help">Kitchen and food stock is kept in Pilot. Bar and shop sales are rung up on the Pilot tills and imported here to reduce stock.</p>
+
+<RoleGate Area="Area.Stock">
+    <ErrorMessage Message="@Error" />
+
+    <div class="filters" role="group" aria-label="Choose a store">
+        @foreach (var s in Access.StoresFor(Viewer.Role))
+        {
+            <button class="chip @(s == _store ? "on" : "")" @onclick="() => ChangeStore(s)">@StoreName(s)</button>
+        }
+    </div>
+
+    @if (_store != StockStore.Maintenance)
+    {
+        <div class="actions">
+            <button class="btn secondary" @onclick="ImportSales">Import today's sales from Pilot</button>
+        </div>
+        @if (_imported is not null)
+        {
+            <p role="status">@_imported sale line(s) taken off stock. Lines already imported are skipped.</p>
+        }
+    }
+
+    @{ var reorder = _items.Where(i => i.NeedsReorder).ToList(); }
+    @if (reorder.Count > 0)
+    {
+        <div class="card warning">
+            <h2>Reorder now (@reorder.Count)</h2>
+            <ul>
+                @foreach (var i in reorder)
+                {
+                    <li>@i.Name: @i.OnHand @i.Unit left (minimum @i.Min). Suggested order: <strong>@StockService.SuggestedOrder(i) @i.Unit</strong></li>
+                }
+            </ul>
+            <a class="btn small" href="/procurement">Raise a requisition</a>
+        </div>
+    }
+
+    <table class="big-table">
+        <thead><tr><th>Code</th><th>Item</th><th>Bin</th><th>On hand</th><th>Min / max</th><th>Unit cost</th><th>Value</th></tr></thead>
+        <tbody>
+            @foreach (var i in _items)
+            {
+                <tr>
+                    <td>@i.Code</td>
+                    <td>@i.Name</td>
+                    <td>@i.Bin</td>
+                    <td>@i.OnHand @i.Unit</td>
+                    <td>@i.Min / @i.Max</td>
+                    <td>@Format.Money(i.UnitCost)</td>
+                    <td>@Format.Money(i.Value)</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot><tr><td colspan="6"><strong>Total stock value</strong></td><td><strong>@Format.Money(_items.Sum(i => i.Value))</strong></td></tr></tfoot>
+    </table>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Receive or count stock</h2>
+            <label for="item">Item</label>
+            <select id="item" class="big-input" @bind="_itemId">
+                <option value="0">-- Choose --</option>
+                @foreach (var i in _items)
+                {
+                    <option value="@i.Id">@i.Name</option>
+                }
+            </select>
+            <label for="qty">Quantity received, or counted quantity for a stock take</label>
+            <input id="qty" type="number" step="1" min="0" class="big-input" @bind="_quantity" />
+            <label for="cost">Unit cost (receiving only)</label>
+            <input id="cost" type="number" step="0.01" min="0" class="big-input" @bind="_unitCost" />
+            <div class="actions">
+                <button class="btn" @onclick="Receive">Receive</button>
+                <button class="btn secondary" @onclick="Count">Save stock take count</button>
+            </div>
+            <p class="muted">@(_store == StockStore.Maintenance ? "Stock is issued to job cards from the job card screen." : "Sales come from the Pilot tills.")</p>
+        </div>
+
+        <details class="card">
+            <summary>Add a stock item</summary>
+            <label for="ncode">Code</label>
+            <input id="ncode" class="big-input" @bind="_new.Code" />
+            <label for="nname">Name</label>
+            <input id="nname" class="big-input" @bind="_new.Name" />
+            <label for="nbin">Bin</label>
+            <input id="nbin" class="big-input" @bind="_new.Bin" />
+            <label for="nunit">Unit</label>
+            <input id="nunit" class="big-input" @bind="_new.Unit" />
+            <label for="nmin">Minimum</label>
+            <input id="nmin" type="number" class="big-input" @bind="_new.Min" />
+            <label for="nmax">Maximum</label>
+            <input id="nmax" type="number" class="big-input" @bind="_new.Max" />
+            <div class="actions"><button class="btn" @onclick="Add">Add item</button></div>
+        </details>
+    </div>
+</RoleGate>
+
+@code {
+    private List<StockItem> _items = [];
+    private StockItem _new = new();
+    private int _itemId;
+    private decimal _quantity, _unitCost;
+    private StockStore _store;
+    private int? _imported;
+
+    protected override Task OnInitializedAsync()
+    {
+        _store = Access.StoresFor(Viewer.Role)[0];
+        return LoadAsync();
+    }
+
+    protected override Task OnViewerChangedAsync()
+    {
+        _store = Access.StoresFor(Viewer.Role)[0];
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync() => _items = await Stock.ListAsync(_store);
+
+    private async Task ChangeStore(StockStore store)
+    {
+        _store = store;
+        _imported = null;
+        await LoadAsync();
+    }
+
+    private async Task ImportSales()
+    {
+        _imported = await Stock.ImportPilotSalesAsync(DateTime.Today, Viewer.Name);
+        await LoadAsync();
+    }
+
+    private static string StoreName(StockStore store) => store switch
+    {
+        StockStore.Maintenance => "Maintenance stores",
+        StockStore.Bar => "Bar",
+        _ => "Trading post (shop)"
+    };
+
+    private async Task Run(Func<Task> action)
+    {
+        await TryAsync(action);
+        await LoadAsync();
+    }
+
+    private Task Receive() => Run(() => Stock.ReceiveAsync(_itemId, _quantity, _unitCost, "Manual receipt", Viewer.Name));
+    private Task Count() => Run(() => Stock.StockTakeAsync(_itemId, _quantity, Viewer.Name));
+
+    private async Task Add()
+    {
+        _new.Store = _store;
+        await Run(() => Stock.AddItemAsync(_new));
+        if (Error is null)
+        {
+            _new = new();
+        }
+    }
+}

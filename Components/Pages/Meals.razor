@@ -1,0 +1,18 @@
+@page "/meals"
+@inherits ViewerAwarePage
+
+<PageTitle>Meals</PageTitle>
+
+<h1>Meals</h1>
+
+@if (Viewer.ResidentId is { } id)
+{
+    <p class="lead">Tap a day to see the menu and book a meal.</p>
+    <MealBooker @key="id" ResidentId="id" BookedBy="@Viewer.Name" />
+}
+else
+{
+    <div class="card">
+        <p>This page is for residents. Staff can book meals for residents on the <a href="/restaurant">Restaurant</a> page.</p>
+    </div>
+}

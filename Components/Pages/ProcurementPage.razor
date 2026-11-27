@@ -1,0 +1,186 @@
+@page "/procurement"
+@inherits ViewerAwarePage
+@inject ProcurementService Procurement
+@inject StockService Stock
+@inject IOptions<VillageOptions> Options
+
+<PageTitle>Procurement</PageTitle>
+
+<h1>Procurement</h1>
+<p class="help">
+    Requisition, then approval, purchase order, goods received and invoice match, then Pastel.
+    Approval limits: Facilities manager up to @Format.Money(Options.Value.Approvals.FacilitiesManagerLimit),
+    village manager up to @Format.Money(Options.Value.Approvals.ManagerLimit), above that the village manager and Finance.
+</p>
+
+<RoleGate Area="Area.Procurement">
+    <ErrorMessage Message="@Error" />
+
+    <table class="big-table">
+        <thead><tr><th>No.</th><th>Supplier</th><th>Reason</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+            @foreach (var p in _purchases)
+            {
+                <tr>
+                    <td>@p.Id<br /><small>@p.PoNumber</small></td>
+                    <td>@p.Supplier</td>
+                    <td>@p.Reason<br /><small>by @p.RequestedBy</small></td>
+                    <td>@Format.Money(p.Total)</td>
+                    <td>
+                        @Format.Words(p.Status)
+                        @if (p.Status == PurchaseStatus.AwaitingApproval)
+                        {
+                            <br /><small>Needs: @Procurement.ApprovalRule(p.Total)@(p.Approvals.Count > 0 ? $" (approved so far by {string.Join(", ", p.Approvals.Select(a => a.By))})" : "")</small>
+                        }
+                        @if (!string.IsNullOrEmpty(p.Note))
+                        {
+                            <br /><small>@p.Note</small>
+                        }
+                    </td>
+                    <td>
+                        @switch (p.Status)
+                        {
+                            case PurchaseStatus.AwaitingApproval when Procurement.CanApprove(Viewer.Role, p.Total):
+                                <button class="btn small" @onclick="() => Run(() => Procurement.ApproveAsync(p.Id, Viewer.Role, Viewer.Name))">Approve</button>
+                                <button class="btn small secondary" @onclick="() => Run(() => Procurement.RejectAsync(p.Id, Viewer.Role, Viewer.Name, _rejectReason))">Reject</button>
+                                break;
+                            case PurchaseStatus.Approved:
+                                <button class="btn small" @onclick="() => Run(() => Procurement.PlaceOrderAsync(p.Id, Viewer.Name))">Place order</button>
+                                break;
+                            case PurchaseStatus.Ordered:
+                            case PurchaseStatus.Received:
+                            case PurchaseStatus.Mismatch:
+                                <button class="btn small" @onclick="() => Select(p)">@(p.Status == PurchaseStatus.Ordered ? "Record delivery" : "Match invoice")</button>
+                                break;
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (_selected is { } s)
+    {
+        <div class="card">
+            @if (s.Status == PurchaseStatus.Ordered)
+            {
+                <h2>Goods received for @s.PoNumber</h2>
+                @for (var i = 0; i < s.Lines.Count; i++)
+                {
+                    var index = i;
+                    <label>
+                        @s.Lines[i].Description (ordered @s.Lines[i].Quantity)
+                        <input type="number" step="1" min="0" class="big-input" @bind="_received[index]" />
+                    </label>
+                }
+                <div class="actions"><button class="btn" @onclick="Receive">Save goods received</button></div>
+            }
+            else
+            {
+                <h2>Match supplier invoice for @s.PoNumber</h2>
+                <label for="inv">Invoice number</label>
+                <input id="inv" class="big-input" @bind="_invoiceNumber" />
+                <label for="amt">Invoice amount</label>
+                <input id="amt" type="number" step="0.01" class="big-input" @bind="_invoiceAmount" />
+                <p class="muted">Allowed difference: @Options.Value.InvoiceMatchTolerancePercent%.</p>
+                <div class="actions"><button class="btn" @onclick="Match">Match invoice</button></div>
+            }
+            <button class="btn secondary" @onclick="() => _selected = null">Close</button>
+        </div>
+    }
+
+    <label for="reject">Reason used when rejecting</label>
+    <input id="reject" class="big-input" @bind="_rejectReason" />
+
+    <div class="card">
+        <h2>New requisition</h2>
+        <label for="sup">Supplier</label>
+        <input id="sup" class="big-input" @bind="_supplier" />
+        <label for="why">Reason</label>
+        <input id="why" class="big-input" @bind="_reason" />
+        @foreach (var line in _lines)
+        {
+            <div class="inline-form">
+                <label>
+                    Stock item
+                    <select @bind="line.StockItemId" @bind:after="() => FillDescription(line)">
+                        <option value="">-- Not a stock item --</option>
+                        @foreach (var i in _stock)
+                        {
+                            <option value="@i.Id">@i.Name</option>
+                        }
+                    </select>
+                </label>
+                <label>Description <input @bind="line.Description" /></label>
+                <label>Quantity <input type="number" step="1" min="1" @bind="line.Quantity" /></label>
+                <label>Unit price <input type="number" step="0.01" min="0" @bind="line.UnitPrice" /></label>
+            </div>
+        }
+        <div class="actions">
+            <button class="btn secondary" @onclick="() => _lines.Add(new PurchaseLine { Quantity = 1 })">Add line</button>
+            <button class="btn" @onclick="Create">Submit for approval (@Format.Money(_lines.Sum(l => l.Quantity * l.UnitPrice)))</button>
+        </div>
+    </div>
+</RoleGate>
+
+@code {
+    private List<Purchase> _purchases = [];
+    private List<StockItem> _stock = [];
+    private Purchase? _selected;
+    private decimal[] _received = [];
+    private string _invoiceNumber = "", _rejectReason = "Not needed now", _supplier = "", _reason = "";
+    private decimal _invoiceAmount;
+    private List<PurchaseLine> _lines = [new() { Quantity = 1 }];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _purchases = await Procurement.ListAsync();
+        _stock = await Stock.ListAsync();
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        await TryAsync(action);
+        await LoadAsync();
+    }
+
+    private void Select(Purchase purchase)
+    {
+        _selected = purchase;
+        _received = purchase.Lines.Select(l => l.Quantity - l.ReceivedQuantity).ToArray();
+        _invoiceAmount = purchase.Lines.Sum(l => l.ReceivedQuantity * l.UnitPrice);
+    }
+
+    private void FillDescription(PurchaseLine line)
+    {
+        if (_stock.FirstOrDefault(i => i.Id == line.StockItemId) is { } item)
+        {
+            line.Description = item.Name;
+            line.UnitPrice = item.UnitCost;
+        }
+    }
+
+    private async Task Receive()
+    {
+        await Run(() => Procurement.ReceiveGoodsAsync(_selected!.Id, _received, Viewer.Name));
+        _selected = null;
+    }
+
+    private async Task Match()
+    {
+        await Run(() => Procurement.MatchInvoiceAsync(_selected!.Id, _invoiceNumber, _invoiceAmount, Viewer.Name));
+        _selected = null;
+    }
+
+    private async Task Create()
+    {
+        if (await TryAsync(() => Procurement.CreateRequisitionAsync(_supplier, _reason, _lines, Viewer.Name)))
+        {
+            _supplier = _reason = "";
+            _lines = [new() { Quantity = 1 }];
+            await LoadAsync();
+        }
+    }
+}

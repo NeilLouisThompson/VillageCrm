@@ -1,0 +1,157 @@
+@page "/policies"
+@inherits ViewerAwarePage
+@inject PolicyService Policies
+
+<PageTitle>@(Viewer.IsResident ? "Village rules and policies" : "Policy library")</PageTitle>
+
+<ErrorMessage Message="@Error" />
+
+@if (Viewer.IsResident)
+{
+    <h1>Village rules and policies</h1>
+    @foreach (var p in _policies)
+    {
+        var current = p.Current!;
+        <article class="card policy-read">
+            <h2>@p.Title</h2>
+            <p class="lead">@current.Body</p>
+            <p class="muted">Version @current.Number, in effect from @Format.Date(current.EffectiveDate).</p>
+            <div class="actions">
+                @if (PolicyService.HasAcknowledged(p, Viewer.Name))
+                {
+                    <p role="status">You have read this. Thank you.</p>
+                }
+                else
+                {
+                    <button class="btn big" @onclick="() => Acknowledge(p)">I have read and understood</button>
+                }
+                <button class="btn big secondary" onclick="window.print()">Print</button>
+            </div>
+        </article>
+    }
+}
+else
+{
+    <h1>Policy library</h1>
+    @foreach (var p in _policies)
+    {
+        var current = p.Current;
+        var pending = p.Pending;
+        <div class="card">
+            <h2>@p.Title <small>(@Format.Words(p.Audience), owner: @p.Owner)</small></h2>
+            @if (current is not null)
+            {
+                <p>@current.Body</p>
+                <p class="muted">
+                    Version @current.Number approved by @current.ApprovedBy. Effective @Format.Date(current.EffectiveDate), review by @Format.Date(current.ReviewDate).
+                    Read and acknowledged: <strong>@($"{PolicyService.AcknowledgementRate(p, _targets[p.Id]):P0}")</strong>
+                </p>
+                @if (p.Audience != PolicyAudience.Residents && !PolicyService.HasAcknowledged(p, Viewer.Name))
+                {
+                    <button class="btn small" @onclick="() => Acknowledge(p)">I have read and understood</button>
+                }
+            }
+
+            @if (pending is not null)
+            {
+                <h3>Version @pending.Number - @Format.Words(pending.Status)</h3>
+                @if (pending.Status == PolicyStatus.Draft)
+                {
+                    <textarea class="big-input" rows="3" @bind="pending.Body"></textarea>
+                    <div class="actions">
+                        <button class="btn small secondary" @onclick="() => Run(() => Policies.EditDraftAsync(p.Id, pending.Body))">Save draft</button>
+                        <button class="btn small" @onclick="() => Run(() => Policies.SubmitForReviewAsync(p.Id))">Send for review</button>
+                    </div>
+                }
+                else
+                {
+                    <p>@pending.Body</p>
+                    @if (Access.Allows(Viewer.Role, Area.ManagePolicies))
+                    {
+                        <div class="inline-form">
+                            <label>Effective <input type="date" @bind="_effective" /></label>
+                            <label>Review by <input type="date" @bind="_review" /></label>
+                            <button class="btn small" @onclick="() => Run(() => Policies.ApproveAsync(p.Id, _effective, _review, Viewer.Role, Viewer.Name))">Approve</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="muted">Waiting for approval by: @Access.WhoMay(Area.ManagePolicies).</p>
+                    }
+                }
+            }
+            else
+            {
+                <button class="btn small secondary" @onclick="() => Run(() => Policies.NewDraftAsync(p.Id))">Start a new version</button>
+            }
+
+            @if (p.Versions.Any(v => v.Status == PolicyStatus.Superseded))
+            {
+                <details>
+                    <summary>Old versions (read-only)</summary>
+                    @foreach (var v in p.Versions.Where(v => v.Status == PolicyStatus.Superseded).OrderByDescending(v => v.Number))
+                    {
+                        <p><strong>Version @v.Number</strong> (@Format.Date(v.EffectiveDate)): @v.Body</p>
+                    }
+                </details>
+            }
+        </div>
+    }
+
+    <details class="card">
+        <summary>New policy</summary>
+        <label for="ptitle">Title</label>
+        <input id="ptitle" class="big-input" @bind="_title" />
+        <label for="powner">Owner</label>
+        <input id="powner" class="big-input" @bind="_owner" />
+        <label for="paud">Audience</label>
+        <select id="paud" class="big-input" @bind="_audience">
+            @foreach (var a in Enum.GetValues<PolicyAudience>())
+            {
+                <option value="@a">@a</option>
+            }
+        </select>
+        <label for="pbody">Text</label>
+        <textarea id="pbody" class="big-input" rows="4" @bind="_body"></textarea>
+        <div class="actions"><button class="btn" @onclick="Create">Create draft</button></div>
+    </details>
+}
+
+@code {
+    private List<Policy> _policies = [];
+    private Dictionary<int, int> _targets = new();
+    private DateTime _effective = DateTime.Today;
+    private DateTime _review = DateTime.Today.AddYears(1);
+    private string _title = "", _owner = "Village manager", _body = "";
+    private PolicyAudience _audience = PolicyAudience.Both;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override Task OnViewerChangedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _policies = await Policies.ListAsync(Viewer.IsResident);
+        _targets = new();
+        foreach (var p in _policies)
+        {
+            _targets[p.Id] = await Policies.TargetCountAsync(p);
+        }
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        await TryAsync(action);
+        await LoadAsync();
+    }
+
+    private Task Acknowledge(Policy policy) => Run(() => Policies.AcknowledgeAsync(policy.Id, Viewer.Name));
+
+    private async Task Create()
+    {
+        if (await TryAsync(() => Policies.CreateAsync(_title, _owner, _audience, _body)))
+        {
+            _title = _body = "";
+            await LoadAsync();
+        }
+    }
+}

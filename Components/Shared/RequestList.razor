@@ -1,0 +1,42 @@
+@inject JobCardService Jobs
+
+@if (_jobs.Count == 0)
+{
+    <div class="card">
+        <p class="lead">You have no requests. Use "Report a problem" if something needs fixing.</p>
+    </div>
+}
+else
+{
+    @foreach (var j in _jobs)
+    {
+        <div class="card request @(j.Status == JobStatus.Closed ? "closed" : "")">
+            <h2>@j.Category</h2>
+            <p>@j.Description</p>
+            <p class="lead">@JobCardService.ResidentMessage(j)</p>
+            <p class="muted">Reported on @Format.Date(j.LoggedAt)</p>
+            @if (j.Status == JobStatus.Done)
+            {
+                <div class="actions">
+                    <button class="btn big" @onclick="() => Confirm(j, true)">Yes, it is fixed</button>
+                    <button class="btn big secondary" @onclick="() => Confirm(j, false)">No, it is not fixed</button>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public int ResidentId { get; set; }
+    [Parameter, EditorRequired] public string ResidentName { get; set; } = "";
+
+    private List<JobCard> _jobs = [];
+
+    protected override async Task OnParametersSetAsync() => _jobs = await Jobs.ListAsync(ResidentId);
+
+    private async Task Confirm(JobCard job, bool isFixed)
+    {
+        await Jobs.ConfirmFixedAsync(job.Id, isFixed, ResidentName, ResidentId);
+        _jobs = await Jobs.ListAsync(ResidentId);
+    }
+}

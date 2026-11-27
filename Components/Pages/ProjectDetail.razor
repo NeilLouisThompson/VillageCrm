@@ -1,0 +1,239 @@
+@page "/projects/{Id:int}"
+@inherits ViewerAwarePage
+@inject ProjectService Projects
+@inject ContractorService Contractors
+@inject IOptions<VillageOptions> Options
+
+<RoleGate Area="Area.Projects">
+    @if (_project is not { } p)
+    {
+        <h1>Project not found</h1>
+    }
+    else
+    {
+        <PageTitle>@p.Name</PageTitle>
+        <h1>@p.Name</h1>
+        <p><a href="/projects">Back to projects</a></p>
+        <ErrorMessage Message="@Error" />
+        @if (_blocked.Count > 0)
+        {
+            <div class="card error" role="alert">
+                <p><strong>Cannot appoint this contractor:</strong></p>
+                <ul>
+                    @foreach (var b in _blocked)
+                    {
+                        <li>@b</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="stats">
+            <div class="stat"><span class="stat-value">@Format.Money(p.Budget)</span>Original budget</div>
+            <div class="stat"><span class="stat-value">@Format.Money(p.RevisedBudget)</span>With approved variations</div>
+            <div class="stat"><span class="stat-value">@Format.Money(p.Actual)</span>Spent</div>
+            <div class="stat"><span class="stat-value">@Format.Money(p.RetentionHeld)</span>Retention held</div>
+        </div>
+
+        <div class="card">
+            <p>@p.Scope</p>
+            <p>Status: <strong>@Format.Words(p.Status)</strong>. Cost centre @p.CostCentre.
+                @if (p.AppointedContractorId is not null)
+                {
+                    <span>Contractor: <strong>@p.AppointedContractor</strong> at @Format.Money(p.ContractAmount).</span>
+                }
+            </p>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Quotes (@ProjectService.DistinctQuoteCount(p) contractors, at least @Options.Value.MinimumQuotes needed)</h2>
+                <table class="big-table">
+                    <thead><tr><th>Contractor</th><th>Amount</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var q in p.Quotes.OrderBy(q => q.Amount))
+                        {
+                            <tr>
+                                <td>@q.ContractorName</td>
+                                <td>@Format.Money(q.Amount)</td>
+                                <td>
+                                    @if (p.AppointedContractorId is null && p.Status != ProjectStatus.Closed)
+                                    {
+                                        <button class="btn small" @onclick="() => Appoint(q.Number)">Appoint</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (p.Status != ProjectStatus.Closed)
+                {
+                    <div class="inline-form">
+                        <label>
+                            Contractor
+                            <select @bind="_quoteContractorId">
+                                <option value="0">-- Choose --</option>
+                                @foreach (var c in _contractors)
+                                {
+                                    <option value="@c.Id">@c.Company</option>
+                                }
+                            </select>
+                        </label>
+                        <label>Amount <input type="number" step="0.01" @bind="_quoteAmount" /></label>
+                        <button class="btn small" @onclick="AddQuote">Add quote</button>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <h2>Milestones</h2>
+                <ul>
+                    @for (var i = 0; i < p.Milestones.Count; i++)
+                    {
+                        var index = i;
+                        var m = p.Milestones[i];
+                        <li>
+                            @m.Name - @Format.Date(m.DueDate)
+                            @if (m.Done)
+                            {
+                                <span class="pill ok">Done</span>
+                            }
+                            else if (p.Status != ProjectStatus.Closed)
+                            {
+                                <button class="btn small secondary" @onclick="() => Run(() => Projects.CompleteMilestoneAsync(p.Id, index))">Mark done</button>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (p.Status != ProjectStatus.Closed)
+                {
+                    <div class="inline-form">
+                        <label>Milestone <input @bind="_milestone" /></label>
+                        <label>Due <input type="date" @bind="_milestoneDue" /></label>
+                        <button class="btn small" @onclick="() => Run(() => Projects.AddMilestoneAsync(p.Id, _milestone, _milestoneDue))">Add</button>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <h2>Variations</h2>
+                <ul>
+                    @for (var i = 0; i < p.Variations.Count; i++)
+                    {
+                        var index = i;
+                        var v = p.Variations[i];
+                        <li>
+                            @v.Description - @Format.Money(v.Amount)
+                            @if (v.Approved)
+                            {
+                                <span class="pill ok">Approved</span>
+                            }
+                            else if (Viewer.Role == UserRole.Manager && p.Status != ProjectStatus.Closed)
+                            {
+                                <button class="btn small" @onclick="() => Run(() => Projects.ApproveVariationAsync(p.Id, index, Viewer.Role))">Approve</button>
+                            }
+                            else
+                            {
+                                <span class="pill normal">Waiting for village manager</span>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (p.Status != ProjectStatus.Closed)
+                {
+                    <div class="inline-form">
+                        <label>Description <input @bind="_variation" /></label>
+                        <label>Amount <input type="number" step="0.01" @bind="_variationAmount" /></label>
+                        <button class="btn small" @onclick="() => Run(() => Projects.AddVariationAsync(p.Id, _variation, _variationAmount))">Add</button>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <h2>Costs</h2>
+                <table class="big-table">
+                    <thead><tr><th>Date</th><th>Kind</th><th>Description</th><th>Amount</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in p.Costs)
+                        {
+                            <tr><td>@Format.Date(c.Date)</td><td>@c.Kind</td><td>@c.Description</td><td>@Format.Money(c.Amount)</td></tr>
+                        }
+                    </tbody>
+                </table>
+                @if (p.Status != ProjectStatus.Closed)
+                {
+                    <div class="inline-form">
+                        <label>Payment certificate <input type="number" step="0.01" @bind="_certificate" /></label>
+                        <label>Description <input @bind="_certificateNote" /></label>
+                        <button class="btn small" @onclick="AddCertificate">Add (@Options.Value.RetentionPercent% retention)</button>
+                    </div>
+                    <div class="inline-form">
+                        <label>
+                            Other cost
+                            <select @bind="_costKind">
+                                <option>Materials</option>
+                                <option>Labour</option>
+                                <option>Professional fees</option>
+                            </select>
+                        </label>
+                        <label>Description <input @bind="_costNote" /></label>
+                        <label>Amount <input type="number" step="0.01" @bind="_costAmount" /></label>
+                        <button class="btn small" @onclick="() => Run(() => Projects.AddCostAsync(p.Id, _costKind, _costNote, _costAmount))">Add cost</button>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Close-out</h2>
+            @if (p.Status == ProjectStatus.Closed)
+            {
+                <p>@p.CloseOutNotes</p>
+            }
+            else
+            {
+                <label for="close">Close-out notes (certificates received, photos filed, retention release date)</label>
+                <textarea id="close" class="big-input" rows="2" @bind="_closeNotes"></textarea>
+                <div class="actions"><button class="btn secondary" @onclick="() => Run(() => Projects.CloseAsync(p.Id, _closeNotes))">Close project</button></div>
+            }
+        </div>
+    }
+</RoleGate>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Project? _project;
+    private List<Contractor> _contractors = [];
+    private List<string> _blocked = [];
+    private int _quoteContractorId;
+    private decimal _quoteAmount, _variationAmount, _certificate, _costAmount;
+    private string _milestone = "", _variation = "", _certificateNote = "", _costKind = "Materials", _costNote = "", _closeNotes = "";
+    private DateTime _milestoneDue = DateTime.Today.AddDays(14);
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _project = await Projects.GetAsync(Id);
+        _contractors = await Contractors.ListAsync();
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        _blocked = [];
+        await TryAsync(action);
+        await LoadAsync();
+    }
+
+    private Task AddQuote() => Run(() => Projects.AddQuoteAsync(Id, _quoteContractorId, _quoteAmount));
+
+    private Task AddCertificate() => Run(() => Projects.AddPaymentCertificateAsync(Id, _certificate, _certificateNote));
+
+    private async Task Appoint(int quoteNumber)
+    {
+        List<string> problems = [];
+        await Run(async () => problems = await Projects.AppointAsync(Id, quoteNumber));
+        _blocked = problems;
+    }
+}

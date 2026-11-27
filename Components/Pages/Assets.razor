@@ -1,0 +1,165 @@
+@page "/assets"
+@inherits ViewerAwarePage
+@inject MaintenanceService Maintenance
+
+<PageTitle>Maintenance</PageTitle>
+
+<h1>Planned maintenance</h1>
+
+<RoleGate Area="Area.Maintenance">
+    <ErrorMessage Message="@Error" />
+
+    <div class="card">
+        <h2>Work orders (@_orders.Count open)</h2>
+        <div class="actions">
+            <button class="btn" @onclick="Generate">Create work orders that are due</button>
+        </div>
+        @if (_generated is not null)
+        {
+            <p role="status">@_generated new work order(s) created.</p>
+        }
+        <table class="big-table">
+            <thead><tr><th>No.</th><th>Asset</th><th>Task</th><th>Due</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var w in _orders)
+                {
+                    <tr>
+                        <td>@w.Id</td>
+                        <td>@w.AssetName</td>
+                        <td>@w.Task</td>
+                        <td>@Format.Date(w.DueDate) @if (w.DueDate.Date < DateTime.Today) { <span class="pill urgent">Overdue</span> }</td>
+                        <td><button class="btn small" @onclick="() => _completing = w">Complete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_completing is not null)
+        {
+            <div class="inline-form">
+                <strong>Complete work order @_completing.Id:</strong>
+                <label>Notes <input @bind="_notes" /></label>
+                <label>Cost <input type="number" step="0.01" min="0" @bind="_cost" /></label>
+                <button class="btn small" @onclick="Complete">Save</button>
+                <button class="btn small secondary" @onclick="() => _completing = null">Cancel</button>
+            </div>
+        }
+    </div>
+
+    <div class="card">
+        <h2>Asset register</h2>
+        <table class="big-table">
+            <thead><tr><th>Asset</th><th>Location</th><th>Schedules</th></tr></thead>
+            <tbody>
+                @foreach (var a in _assets)
+                {
+                    <tr>
+                        <td>@a.Name<br /><small>@a.Category</small></td>
+                        <td>@a.Location</td>
+                        <td>
+                            <ul>
+                                @foreach (var s in a.Schedules)
+                                {
+                                    <li>@s.Task - @Format.Words(s.Frequency), next @Format.Date(s.NextDue)</li>
+                                }
+                            </ul>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="grid">
+        <details class="card">
+            <summary>Add an asset</summary>
+            <label for="aname">Name</label>
+            <input id="aname" class="big-input" @bind="_assetName" />
+            <label for="acat">Category (lift, generator, geyser, fire equipment, pump, HVAC, vehicle)</label>
+            <input id="acat" class="big-input" @bind="_assetCategory" />
+            <label for="aloc">Location</label>
+            <input id="aloc" class="big-input" @bind="_assetLocation" />
+            <div class="actions"><button class="btn" @onclick="AddAsset">Add asset</button></div>
+        </details>
+
+        <details class="card">
+            <summary>Add a maintenance schedule</summary>
+            <label for="sasset">Asset</label>
+            <select id="sasset" class="big-input" @bind="_scheduleAssetId">
+                <option value="0">-- Choose --</option>
+                @foreach (var a in _assets)
+                {
+                    <option value="@a.Id">@a.Name</option>
+                }
+            </select>
+            <label for="stask">Task</label>
+            <input id="stask" class="big-input" @bind="_scheduleTask" />
+            <label for="sfreq">How often</label>
+            <select id="sfreq" class="big-input" @bind="_scheduleFrequency">
+                @foreach (var f in Enum.GetValues<Frequency>().Where(f => f != Frequency.Once))
+                {
+                    <option value="@f">@Format.Words(f)</option>
+                }
+            </select>
+            <label for="sfirst">First due</label>
+            <input id="sfirst" type="date" class="big-input" @bind="_scheduleFirst" />
+            <div class="actions"><button class="btn" @onclick="AddSchedule">Add schedule</button></div>
+        </details>
+    </div>
+</RoleGate>
+
+@code {
+    private List<Asset> _assets = [];
+    private List<WorkOrder> _orders = [];
+    private int? _generated;
+    private WorkOrder? _completing;
+    private string _notes = "";
+    private decimal _cost;
+    private string _assetName = "", _assetCategory = "", _assetLocation = "";
+    private int _scheduleAssetId;
+    private string _scheduleTask = "";
+    private Frequency _scheduleFrequency = Frequency.Monthly;
+    private DateTime _scheduleFirst = DateTime.Today;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _assets = await Maintenance.AssetsAsync();
+        _orders = await Maintenance.WorkOrdersAsync(openOnly: true);
+    }
+
+    private async Task Generate()
+    {
+        _generated = await Maintenance.GenerateDueWorkOrdersAsync();
+        await LoadAsync();
+    }
+
+    private async Task Complete()
+    {
+        if (await TryAsync(() => Maintenance.CompleteWorkOrderAsync(_completing!.Id, _notes, _cost, Viewer.Name)))
+        {
+            _completing = null;
+            _notes = "";
+            _cost = 0;
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddAsset()
+    {
+        if (await TryAsync(() => Maintenance.AddAssetAsync(_assetName, _assetCategory, _assetLocation)))
+        {
+            _assetName = _assetCategory = _assetLocation = "";
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddSchedule()
+    {
+        if (await TryAsync(() => Maintenance.AddScheduleAsync(_scheduleAssetId, _scheduleTask, _scheduleFrequency, _scheduleFirst)))
+        {
+            _scheduleTask = "";
+            await LoadAsync();
+        }
+    }
+}

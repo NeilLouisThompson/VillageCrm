@@ -1,0 +1,220 @@
+@page "/job-cards"
+@inherits ViewerAwarePage
+@inject JobCardService Jobs
+@inject StockService Stock
+@inject IOptions<VillageOptions> Options
+
+<PageTitle>Job cards</PageTitle>
+
+<h1>Job cards</h1>
+
+<RoleGate Area="Area.JobCards">
+    <ErrorMessage Message="@Error" />
+
+    <div class="filters" role="group" aria-label="Filter job cards">
+        @foreach (var f in new[] { "Open", "Escalated", "Waiting for resident", "Closed", "All" })
+        {
+            <button class="chip @(_filter == f ? "on" : "")" @onclick="() => _filter = f">@f</button>
+        }
+    </div>
+
+    <table class="big-table">
+        <thead>
+            <tr><th>No.</th><th>Resident</th><th>Problem</th><th>Priority</th><th>Status</th><th>Service time</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var j in Filtered())
+            {
+                var next = JobCardService.NextStep(j.Status);
+                <tr>
+                    <td>@j.Id</td>
+                    <td>@j.ResidentName<br /><small>Unit @j.Unit</small></td>
+                    <td>@j.Category<br /><small>@j.Description</small></td>
+                    <td><span class="pill @j.Priority.ToString().ToLower()">@j.Priority</span></td>
+                    <td>@Format.Words(j.Status)@(j.ReopenCount > 0 ? $" (reopened {j.ReopenCount}x)" : "")</td>
+                    <td>
+                        @if (Jobs.IsSlaBreached(j))
+                        {
+                            <span class="pill urgent">Late - escalated</span>
+                        }
+                        else if (j.Status is not (JobStatus.Done or JobStatus.Closed))
+                        {
+                            <small>Due @Format.When(j.SlaDueAt)</small>
+                        }
+                    </td>
+                    <td>
+                        @if (next == JobStatus.Scheduled)
+                        {
+                            <button class="btn small" @onclick="() => Select(j)">Schedule</button>
+                        }
+                        else if (next is { } step)
+                        {
+                            <button class="btn small" @onclick="() => Move(j, step)">@StepLabel(step)</button>
+                        }
+                        <button class="btn small secondary" @onclick="() => Select(j)">Details</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (_selected is { } s)
+    {
+        <div class="card">
+            <h2>Job @s.Id - @s.Category for @s.ResidentName</h2>
+            @if (s.LoggedOnBehalfBy is not null)
+            {
+                <p class="muted">Logged by @s.LoggedOnBehalfBy for the resident.</p>
+            }
+
+            @if (s.Status == JobStatus.Acknowledged)
+            {
+                <h3>Schedule a visit</h3>
+                <label for="sdate">Date</label>
+                <input id="sdate" type="date" class="big-input" @bind="_scheduleDate" />
+                <label for="swin">Time window</label>
+                <select id="swin" class="big-input" @bind="_scheduleWindow">
+                    @foreach (var w in Options.Value.ScheduleWindows)
+                    {
+                        <option value="@w">@w</option>
+                    }
+                </select>
+                <div class="actions"><button class="btn" @onclick="Schedule">Schedule</button></div>
+            }
+
+            @if (s.Status == JobStatus.Done)
+            {
+                <h3>Resident confirmation</h3>
+                <p>Ask the resident: is it fixed? (Reception can answer for them.)</p>
+                <div class="actions">
+                    <button class="btn" @onclick="() => Confirm(true)">Yes, fixed</button>
+                    <button class="btn secondary" @onclick="() => Confirm(false)">No - reopen</button>
+                </div>
+            }
+
+            <h3>Costs: @Format.Money(Jobs.Cost(s))</h3>
+            <p class="muted">@s.LabourHours h labour at @Format.Money(Options.Value.LabourRatePerHour)/h, contractor @Format.Money(s.ContractorCost)</p>
+            @if (s.StockLines.Count > 0)
+            {
+                <ul>
+                    @foreach (var l in s.StockLines)
+                    {
+                        <li>@l.Quantity x @l.Description @@ @Format.Money(l.UnitCost)</li>
+                    }
+                </ul>
+            }
+            <div class="inline-form">
+                <label>Labour hours <input type="number" step="0.25" min="0" @bind="_labour" /></label>
+                <label>Contractor cost <input type="number" step="0.01" min="0" @bind="_contractor" /></label>
+                <button class="btn small" @onclick="AddCosts">Add costs</button>
+            </div>
+            <div class="inline-form">
+                <label>
+                    Stock item
+                    <select @bind="_stockItemId">
+                        <option value="0">-- Choose --</option>
+                        @foreach (var i in _stock)
+                        {
+                            <option value="@i.Id">@i.Name (@i.OnHand @i.Unit)</option>
+                        }
+                    </select>
+                </label>
+                <label>Quantity <input type="number" step="1" min="1" @bind="_stockQty" /></label>
+                <button class="btn small" disabled="@(_stockItemId == 0)" @onclick="IssueStock">Issue from stores</button>
+            </div>
+
+            <h3>Charge to resident</h3>
+            @switch (s.ChargeStatus)
+            {
+                case ChargeStatus.Approved:
+                    <p>@Format.Money(s.ChargeAmount) approved and queued for Pastel.</p>
+                    break;
+                case ChargeStatus.AwaitingApproval:
+                    <p>@Format.Money(s.ChargeAmount) waiting for approval.</p>
+                    @if (Access.Allows(Viewer.Role, Area.ApproveCharges))
+                    {
+                        <button class="btn small" @onclick="ApproveCharge">Approve charge</button>
+                    }
+                    break;
+                default:
+                    <div class="inline-form">
+                        <label>Amount <input type="number" step="0.01" min="0" @bind="_charge" /></label>
+                        <button class="btn small" @onclick="MarkBillable">Propose charge</button>
+                    </div>
+                    break;
+            }
+
+            <h3>History</h3>
+            <ul>
+                @foreach (var h in s.History)
+                {
+                    <li>@h</li>
+                }
+            </ul>
+            <button class="btn secondary" @onclick="() => _selected = null">Close</button>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private string _filter = "Open";
+    private List<JobCard> _jobs = [];
+    private List<StockItem> _stock = [];
+    private JobCard? _selected;
+    private DateTime _scheduleDate = DateTime.Today.AddDays(1);
+    private string _scheduleWindow = "";
+    private decimal _labour, _contractor, _charge, _stockQty = 1;
+    private int _stockItemId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _scheduleWindow = Options.Value.ScheduleWindows.FirstOrDefault() ?? "";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _jobs = await Jobs.ListAsync();
+        _stock = await Stock.ListAsync(StockStore.Maintenance);
+        if (_selected is not null)
+        {
+            _selected = _jobs.FirstOrDefault(j => j.Id == _selected.Id);
+        }
+    }
+
+    private IEnumerable<JobCard> Filtered() => _jobs.Where(j => _filter switch
+    {
+        "Open" => j.Status is not (JobStatus.Done or JobStatus.Closed),
+        "Escalated" => Jobs.IsSlaBreached(j),
+        "Waiting for resident" => j.Status == JobStatus.Done,
+        "Closed" => j.Status == JobStatus.Closed,
+        _ => true
+    });
+
+    private static string StepLabel(JobStatus next) => next switch
+    {
+        JobStatus.Acknowledged => "Acknowledge",
+        JobStatus.InProgress => "Start work",
+        _ => "Mark done"
+    };
+
+    private void Select(JobCard job)
+    {
+        _selected = job;
+        Error = null;
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        await TryAsync(action);
+        await LoadAsync();
+    }
+
+    private Task Move(JobCard job, JobStatus next) => Run(() => Jobs.MoveAsync(job.Id, next, Viewer.Name));
+    private Task Schedule() => Run(() => Jobs.ScheduleAsync(_selected!.Id, _scheduleDate, _scheduleWindow, Viewer.Name));
+    private Task Confirm(bool isFixed) => Run(() => Jobs.ConfirmFixedAsync(_selected!.Id, isFixed, $"{Viewer.Name} for the resident"));
+    private Task AddCosts() => Run(() => Jobs.AddCostsAsync(_selected!.Id, _labour, _contractor, Viewer.Name));
+    private Task IssueStock() => Run(() => Jobs.IssueStockAsync(_selected!.Id, _stockItemId, _stockQty, Viewer.Name));
+    private Task MarkBillable() => Run(() => Jobs.MarkBillableAsync(_selected!.Id, _charge, Viewer.Name));
+    private Task ApproveCharge() => Run(() => Jobs.ApproveChargeAsync(_selected!.Id, Viewer.Role, Viewer.Name));
+}

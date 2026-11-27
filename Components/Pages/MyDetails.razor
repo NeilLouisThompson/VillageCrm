@@ -1,0 +1,94 @@
+@page "/my-details"
+@inherits ViewerAwarePage
+@inject ResidentService Residents
+
+<PageTitle>My details</PageTitle>
+
+<h1>My details</h1>
+
+@if (_resident is null)
+{
+    <div class="card"><p>This page is for residents. Choose "Resident" in the top bar.</p></div>
+}
+else
+{
+    <AccountStatementView @key="_resident.Id" AccountNumber="@_resident.AccountNumber" />
+
+    <div class="grid">
+        <div class="card">
+            <h2>My contact details</h2>
+            <dl>
+                <dt>Phone</dt><dd>@_resident.Phone</dd>
+                <dt>Email</dt><dd>@_resident.Email</dd>
+                <dt>Next of kin</dt><dd>@_resident.NextOfKin</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Change my contact details</h2>
+        @if (_pending)
+        {
+            <p class="lead">Thank you. Reception will check your change and update it.</p>
+        }
+        else
+        {
+            <label for="phone">Phone</label>
+            <input id="phone" class="big-input" @bind="_phone" />
+            <label for="email">Email</label>
+            <input id="email" class="big-input" @bind="_email" />
+            <label for="nok">Next of kin (name, relationship, phone)</label>
+            <input id="nok" class="big-input" @bind="_nextOfKin" />
+            <div class="actions"><button class="btn big" @onclick="RequestChange">Send change to reception</button></div>
+        }
+    </div>
+
+    <div class="card">
+        <h2>My consent</h2>
+        <label class="check"><input type="checkbox" @bind="_directory" /> Show my name and unit in the resident directory</label>
+        <label class="check"><input type="checkbox" @bind="_photo" /> You may use photos of me in village notices</label>
+        <label class="check"><input type="checkbox" @bind="_dataSharing" /> Share my dietary needs with the kitchen</label>
+        <label class="check"><input type="checkbox" @bind="_welfare" /> Let reception know if I miss meals for two days</label>
+        <div class="actions"><button class="btn big" @onclick="SaveConsent">Save my choices</button></div>
+        @if (_consentSaved)
+        {
+            <p role="status">Your choices are saved.</p>
+        }
+    </div>
+}
+
+@code {
+    private Resident? _resident;
+    private bool _pending;
+    private string _phone = "", _email = "", _nextOfKin = "";
+    private bool _directory, _photo, _dataSharing, _welfare, _consentSaved;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override Task OnViewerChangedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _consentSaved = false;
+        _resident = Viewer.ResidentId is { } id ? await Residents.GetAsync(id) : null;
+        if (_resident is null)
+        {
+            return;
+        }
+        _pending = (await Residents.PendingChangesAsync(_resident.Id)).Count > 0;
+        (_phone, _email, _nextOfKin) = (_resident.Phone, _resident.Email, _resident.NextOfKin);
+        (_directory, _photo, _dataSharing, _welfare) =
+            (_resident.DirectoryOptIn, _resident.PhotoConsent, _resident.DataSharingConsent, _resident.WelfareMonitoringConsent);
+    }
+
+    private async Task RequestChange()
+    {
+        await Residents.RequestContactChangeAsync(_resident!.Id, _phone, _email, _nextOfKin);
+        _pending = true;
+    }
+
+    private async Task SaveConsent()
+    {
+        await Residents.UpdateConsentAsync(_resident!.Id, _directory, _photo, _dataSharing, _welfare, _resident.FullName);
+        _consentSaved = true;
+    }
+}

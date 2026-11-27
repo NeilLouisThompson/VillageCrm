@@ -1,0 +1,157 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using System.Security.Cryptography
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ViewerContext Viewer
+@inject IRepository<StaffMember> StaffRepo
+@inject IRepository<Resident> ResidentRepo
+@inject IOptions<VillageOptions> Options
+@inject ProtectedLocalStorage Storage
+
+<div class="app @(Viewer.BiggerText ? "bigger" : "")">
+    <div class="emergency" role="note">
+        This is NOT for emergencies. Use your panic button or call <a href="tel:@Options.Value.EmergencyPhone">@Options.Value.EmergencyPhone</a>.
+    </div>
+
+    <header class="topbar">
+        <a class="brand" href="/">@Options.Value.VillageName</a>
+        <nav aria-label="Main navigation">
+            <a href="/">Home</a>
+            @foreach (var link in Access.NavLinks(Viewer.Role))
+            {
+                <a href="@link.Href">@link.Text</a>
+            }
+        </nav>
+        <div class="viewer">
+            <span class="who">@Viewer.Name</span>
+            <button class="btn small secondary" aria-pressed="@Viewer.BiggerText" @onclick="Viewer.ToggleBiggerText">Bigger text</button>
+        </div>
+    </header>
+
+    <main>
+        @* Pages wait until the saved viewer is restored, so they never load (or audit) as the wrong person. *@
+        @if (_ready)
+        {
+            @Body
+        }
+    </main>
+
+    <footer class="help-footer">
+        Need help? Call reception on <a href="tel:@Options.Value.ReceptionPhone">@Options.Value.ReceptionPhone</a>.
+    </footer>
+
+    <aside class="demo-viewer" aria-label="Demo: choose who you are">
+        <label>
+            Demo role
+            <select @onchange="OnRoleChanged">
+                @foreach (var role in Enum.GetValues<UserRole>())
+                {
+                    <option value="@role" selected="@(role == Viewer.Role)">@Access.Label(role)</option>
+                }
+            </select>
+        </label>
+        @if (Viewer.IsResident)
+        {
+            <label>
+                Resident
+                <select @onchange="OnResidentChanged">
+                    @foreach (var r in _residents)
+                    {
+                        <option value="@r.Id" selected="@(r.Id == Viewer.ResidentId)">@r.FullName</option>
+                    }
+                </select>
+            </label>
+        }
+    </aside>
+</div>
+
+@code {
+    private const string StorageKey = "demo-viewer";
+
+    private List<StaffMember> _staff = [];
+    private List<Resident> _residents = [];
+    private bool _ready;
+
+    private record SavedViewer(UserRole Role, int? ResidentId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Viewer.Changed += OnViewerChanged;
+        _staff = await StaffRepo.ListAsync();
+        _residents = (await ResidentRepo.ListAsync()).Where(r => r.IsActive).OrderBy(r => r.FullName).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var saved = await LoadSavedAsync();
+        if (saved is { Role: UserRole.Resident, ResidentId: { } id } && _residents.FirstOrDefault(r => r.Id == id) is { } resident)
+        {
+            Viewer.SetResident(resident.Id, resident.FullName);
+        }
+        else if (saved is { } s && s.Role != UserRole.Resident)
+        {
+            SetStaff(s.Role);
+        }
+        else if (string.IsNullOrEmpty(Viewer.Name))
+        {
+            SetStaff(Viewer.Role);
+        }
+
+        _ready = true;
+        StateHasChanged();
+    }
+
+    private async Task OnRoleChanged(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<UserRole>(e.Value?.ToString(), out var role))
+        {
+            return;
+        }
+        if (role == UserRole.Resident && _residents.FirstOrDefault() is { } first)
+        {
+            Viewer.SetResident(first.Id, first.FullName);
+        }
+        else
+        {
+            SetStaff(role);
+        }
+        await SaveAsync();
+    }
+
+    private async Task OnResidentChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id) && _residents.FirstOrDefault(r => r.Id == id) is { } r)
+        {
+            Viewer.SetResident(r.Id, r.FullName);
+            await SaveAsync();
+        }
+    }
+
+    private void SetStaff(UserRole role) =>
+        Viewer.SetStaff(role, _staff.FirstOrDefault(s => s.Role == role)?.FullName ?? $"{Access.Label(role)} staff");
+
+    private Task SaveAsync() => Storage.SetAsync(StorageKey, new SavedViewer(Viewer.Role, Viewer.ResidentId)).AsTask();
+
+    private async Task<SavedViewer?> LoadSavedAsync()
+    {
+        try
+        {
+            var result = await Storage.GetAsync<SavedViewer>(StorageKey);
+            return result.Success ? result.Value : null;
+        }
+        catch (CryptographicException)
+        {
+            // Saved value from an older data-protection key; fall back to the default role.
+            return null;
+        }
+    }
+
+    private void OnViewerChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Viewer.Changed -= OnViewerChanged;
+}

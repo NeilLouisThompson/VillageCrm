@@ -1,0 +1,158 @@
+@page "/kiosk"
+@layout KioskLayout
+@implements IDisposable
+@inject ResidentService Residents
+@inject IOptions<VillageOptions> Options
+
+<PageTitle>Village kiosk</PageTitle>
+
+@* Lounge tablet: no staff menus and no medical data. Returns to the start after inactivity. *@
+<div @onclick="Touch" @onkeydown="Touch">
+    @if (_resident is null)
+    {
+        <h1>Welcome. Find your name.</h1>
+        <label for="kiosk-search">Type part of your name or your unit number</label>
+        <input id="kiosk-search" class="big-input kiosk-search" type="search" autocomplete="off"
+               @bind="_search" @bind:event="oninput" />
+        <div class="tiles name-tiles">
+            @foreach (var r in Matches())
+            {
+                <button class="tile" @onclick="() => Choose(r)">@r.FullName<br /><small>Unit @r.Unit</small></button>
+            }
+        </div>
+        @if (!Matches().Any())
+        {
+            <p class="lead">No one found. Try fewer letters, or ask reception.</p>
+        }
+    }
+    else
+    {
+        <h1>Hello, @_resident.FullName</h1>
+        @switch (_screen)
+        {
+            case "report":
+                <ReportFlow ResidentId="_resident.Id" />
+                break;
+            case "requests":
+                <RequestList ResidentId="_resident.Id" ResidentName="@_resident.FullName" />
+                break;
+            case "notices":
+                <NoticeList />
+                break;
+            case "meals":
+                <MealBooker ResidentId="_resident.Id" BookedBy="@($"{_resident.FullName} (kiosk)")" />
+                break;
+            case "account" when _pinOk:
+                <AccountStatementView AccountNumber="@_resident.AccountNumber" />
+                break;
+            case "account":
+                <div class="card">
+                    <h2>Enter your 4-digit PIN</h2>
+                    <p class="pin-dots" aria-live="polite">@(new string('●', _pin.Length))@(new string('○', 4 - _pin.Length))</p>
+                    @if (_pinMessage is not null)
+                    {
+                        <p class="lead" role="alert">@_pinMessage</p>
+                    }
+                    <div class="pin-pad">
+                        @foreach (var d in "123456789")
+                        {
+                            <button class="pick" @onclick="() => PinDigit(d)">@d</button>
+                        }
+                        <button class="pick" @onclick='() => _pin = ""'>Clear</button>
+                        <button class="pick" @onclick="() => PinDigit('0')">0</button>
+                        <button class="pick" disabled="@(_pin.Length != 4)" @onclick="CheckPin">OK</button>
+                    </div>
+                    <p class="muted">Forgot your PIN? Reception can set a new one.</p>
+                </div>
+                break;
+            default:
+                <div class="tiles home-tiles">
+                    <button class="tile tile-primary" @onclick='() => _screen = "report"'><span class="tile-icon" aria-hidden="true">🔧</span>Report a problem</button>
+                    <button class="tile" @onclick='() => _screen = "meals"'><span class="tile-icon" aria-hidden="true">🍽️</span>Meals</button>
+                    <button class="tile" @onclick='() => _screen = "requests"'><span class="tile-icon" aria-hidden="true">📋</span>My requests</button>
+                    <button class="tile" @onclick='() => _screen = "notices"'><span class="tile-icon" aria-hidden="true">📢</span>Notices</button>
+                    <button class="tile" @onclick='() => _screen = "account"'><span class="tile-icon" aria-hidden="true">💳</span>My account</button>
+                </div>
+                break;
+        }
+        <div class="actions">
+            @if (_screen != "")
+            {
+                <button class="btn big secondary" @onclick='() => _screen = ""'>Back</button>
+            }
+            <button class="btn big secondary" @onclick="Finish">I am finished</button>
+        </div>
+    }
+</div>
+
+@code {
+    private const int MaxPinAttempts = 3;
+
+    private List<Resident> _residents = [];
+    private Resident? _resident;
+    private string _screen = "";
+    private string _search = "";
+    private string _pin = "";
+    private bool _pinOk;
+    private int _pinAttempts;
+    private string? _pinMessage;
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _residents = (await Residents.ListAsync()).OrderBy(r => r.FullName).ToList();
+        _timer = new Timer(_ => InvokeAsync(() => { Finish(); StateHasChanged(); }));
+    }
+
+    private IEnumerable<Resident> Matches() => _residents.Where(r =>
+        string.IsNullOrWhiteSpace(_search)
+        || r.FullName.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
+        || r.Unit.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void Choose(Resident resident)
+    {
+        _resident = resident;
+        _screen = "";
+    }
+
+    private void PinDigit(char digit)
+    {
+        if (_pin.Length < 4)
+        {
+            _pin += digit;
+        }
+    }
+
+    private async Task CheckPin()
+    {
+        if (await Residents.VerifyKioskPinAsync(_resident!.Id, _pin))
+        {
+            _pinOk = true;
+            _pinMessage = null;
+        }
+        else if (++_pinAttempts >= MaxPinAttempts)
+        {
+            Finish();
+        }
+        else
+        {
+            _pinMessage = $"That PIN is not right. Tries left: {MaxPinAttempts - _pinAttempts}.";
+        }
+        _pin = "";
+    }
+
+    private void Touch() => _timer?.Change(TimeSpan.FromSeconds(Options.Value.KioskTimeoutSeconds), Timeout.InfiniteTimeSpan);
+
+    private void Finish()
+    {
+        _resident = null;
+        _screen = "";
+        _search = "";
+        _pin = "";
+        _pinOk = false;
+        _pinAttempts = 0;
+        _pinMessage = null;
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

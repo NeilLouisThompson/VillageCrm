@@ -1,0 +1,122 @@
+@page "/contractors"
+@inherits ViewerAwarePage
+@inject ContractorService Contractors
+
+<PageTitle>Contractors</PageTitle>
+
+<h1>Contractor register</h1>
+<p class="help">A contractor cannot be appointed while any document is missing or expired.</p>
+
+<RoleGate Area="Area.Contractors">
+    <ErrorMessage Message="@Error" />
+
+    @foreach (var c in _contractors)
+    {
+        var problems = Contractors.Problems(c);
+        <div class="card">
+            <h2>@c.Company <span class="pill @(problems.Count == 0 ? "ok" : "urgent")">@(problems.Count == 0 ? "Compliant" : "Blocked")</span></h2>
+            <p>@c.Trade - @c.ContactPerson, @c.Phone</p>
+            <table class="big-table">
+                <thead><tr><th>Document</th><th>Reference</th><th>Expires</th></tr></thead>
+                <tbody>
+                    @foreach (var type in Enum.GetValues<ContractorDocType>())
+                    {
+                        var doc = c.Documents.FirstOrDefault(d => d.Type == type);
+                        <tr>
+                            <td>@ContractorService.Label(type)</td>
+                            <td>@doc?.Reference</td>
+                            <td>
+                                @if (doc is null)
+                                {
+                                    <span class="pill urgent">Missing</span>
+                                }
+                                else
+                                {
+                                    @Format.Date(doc.ExpiresOn)
+                                    @if (doc.ExpiresOn.Date < DateTime.Today)
+                                    {
+                                        <span class="pill urgent">Expired</span>
+                                    }
+                                    else if (Contractors.ExpiresSoon(doc))
+                                    {
+                                        <span class="pill normal">Expires soon</span>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <div class="grid">
+        <details class="card">
+            <summary>Add or renew a document</summary>
+            <label for="dcon">Contractor</label>
+            <select id="dcon" class="big-input" @bind="_docContractorId">
+                <option value="0">-- Choose --</option>
+                @foreach (var c in _contractors)
+                {
+                    <option value="@c.Id">@c.Company</option>
+                }
+            </select>
+            <label for="dtype">Document</label>
+            <select id="dtype" class="big-input" @bind="_docType">
+                @foreach (var t in Enum.GetValues<ContractorDocType>())
+                {
+                    <option value="@t">@ContractorService.Label(t)</option>
+                }
+            </select>
+            <label for="dref">Reference</label>
+            <input id="dref" class="big-input" @bind="_docReference" />
+            <label for="dexp">Expiry date</label>
+            <input id="dexp" type="date" class="big-input" @bind="_docExpires" />
+            <div class="actions"><button class="btn" @onclick="SaveDocument">Save document</button></div>
+        </details>
+
+        <details class="card">
+            <summary>Add a contractor</summary>
+            <label for="ccomp">Company</label>
+            <input id="ccomp" class="big-input" @bind="_new.Company" />
+            <label for="ctrade">Trade</label>
+            <input id="ctrade" class="big-input" @bind="_new.Trade" />
+            <label for="ccontact">Contact person</label>
+            <input id="ccontact" class="big-input" @bind="_new.ContactPerson" />
+            <label for="cphone">Phone</label>
+            <input id="cphone" class="big-input" @bind="_new.Phone" />
+            <div class="actions"><button class="btn" @onclick="Add">Add contractor</button></div>
+        </details>
+    </div>
+</RoleGate>
+
+@code {
+    private List<Contractor> _contractors = [];
+    private Contractor _new = new();
+    private int _docContractorId;
+    private ContractorDocType _docType;
+    private string _docReference = "";
+    private DateTime _docExpires = DateTime.Today.AddYears(1);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _contractors = await Contractors.ListAsync();
+
+    private async Task Add()
+    {
+        if (await TryAsync(() => Contractors.AddAsync(_new)))
+        {
+            _new = new();
+            await LoadAsync();
+        }
+    }
+
+    private async Task SaveDocument()
+    {
+        if (await TryAsync(() => Contractors.SaveDocumentAsync(_docContractorId, _docType, _docReference, _docExpires)))
+        {
+            _docReference = "";
+            await LoadAsync();
+        }
+    }
+}

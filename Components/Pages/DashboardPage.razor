@@ -1,0 +1,51 @@
+@page "/dashboard"
+@inherits ViewerAwarePage
+@inject DashboardService Dashboard
+
+<PageTitle>Dashboard</PageTitle>
+
+<h1>Dashboard</h1>
+
+<RoleGate Area="Area.Dashboard">
+    <div class="actions">
+        <a class="btn" href="/export/dashboard.csv" target="_blank">Export to Excel (CSV)</a>
+        <button class="btn secondary" onclick="window.print()">Print / save as PDF</button>
+    </div>
+
+    @foreach (var group in _rows.GroupBy(r => r.Area))
+    {
+        <div class="card">
+            <h2>@group.Key</h2>
+            <table class="big-table">
+                <tbody>
+                    @foreach (var r in group)
+                    {
+                        <tr>
+                            <td>@r.Measure</td>
+                            <td><strong>@r.Value</strong></td>
+                            <td>
+                                @if (r.Rag != Rag.None)
+                                {
+                                    <span class="pill @RagClass(r.Rag)">@r.Rag</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private List<DashboardRow> _rows = [];
+
+    protected override async Task OnInitializedAsync() => _rows = await Dashboard.GetAsync();
+
+    private static string RagClass(Rag rag) => rag switch
+    {
+        Rag.Red => "urgent",
+        Rag.Amber => "normal",
+        _ => "ok"
+    };
+}

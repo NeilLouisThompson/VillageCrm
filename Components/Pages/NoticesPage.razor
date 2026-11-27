@@ -1,0 +1,47 @@
+@page "/notices"
+@inherits ViewerAwarePage
+@inject NoticeService Notices
+
+<PageTitle>Notices</PageTitle>
+
+<h1>Notices</h1>
+
+<ErrorMessage Message="@Error" />
+
+@if (Access.Allows(Viewer.Role, Area.ManageNotices))
+{
+    <details class="card">
+        <summary>Post a notice</summary>
+        <label for="ntitle">Title</label>
+        <input id="ntitle" class="big-input" @bind="_title" />
+        <label for="nbody">Message</label>
+        <textarea id="nbody" class="big-input" rows="3" @bind="_body"></textarea>
+        <label for="nexp">Take down after (optional)</label>
+        <input id="nexp" type="date" class="big-input" @bind="_expires" />
+        <div class="actions"><button class="btn" @onclick="Post">Post notice</button></div>
+    </details>
+    <NoticeList Version="_version" OnExpire="Expire" />
+}
+else
+{
+    <NoticeList Version="_version" />
+}
+
+@code {
+    private string _title = "";
+    private string _body = "";
+    private DateTime? _expires;
+    private int _version;
+
+    private async Task Post()
+    {
+        if (await TryAsync(() => Notices.PostAsync(_title, _body, _expires, Viewer.Name)))
+        {
+            _title = _body = "";
+            _expires = null;
+            _version++;
+        }
+    }
+
+    private Task Expire(Notice notice) => Notices.ExpireAsync(notice.Id);
+}
