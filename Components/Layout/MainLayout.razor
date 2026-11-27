@@ -6,6 +6,7 @@
 @inject IRepository<Resident> ResidentRepo
 @inject IOptions<VillageOptions> Options
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <div class="app @(Viewer.BiggerText ? "bigger" : "")">
     <div class="emergency" role="note">
@@ -62,6 +63,8 @@
             </label>
         }
     </aside>
+
+    <IntegrationToasts />
 </div>
 
 @code {
@@ -120,6 +123,7 @@
             SetStaff(role);
         }
         await SaveAsync();
+        Navigation.NavigateTo(Access.StartPage(Viewer.Role));
     }
 
     private async Task OnResidentChanged(ChangeEventArgs e)
@@ -128,6 +132,7 @@
         {
             Viewer.SetResident(r.Id, r.FullName);
             await SaveAsync();
+            Navigation.NavigateTo(Access.StartPage(Viewer.Role));
         }
     }
 

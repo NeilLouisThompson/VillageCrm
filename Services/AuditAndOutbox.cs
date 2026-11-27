@@ -23,7 +23,7 @@ public class AuditService(IRepository<AuditEntry> audit, TimeProvider time)
 }
 
 /// <summary>Queue for Pastel and Pilot. Messages are sent by <see cref="ProcessAsync"/> and retried on failure.</summary>
-public class OutboxService(IRepository<OutboxMessage> outbox, IPastelGateway pastel, IPilotGateway pilot, TimeProvider time)
+public class OutboxService(IRepository<OutboxMessage> outbox, IPastelGateway pastel, IPilotGateway pilot, TimeProvider time, IntegrationActivity activity)
 {
     /// <summary>Returns false if a message with this reference was already queued (idempotent).</summary>
     public async Task<bool> EnqueueAsync(OutboxTarget target, string type, string reference, object payload)
@@ -34,7 +34,7 @@ public class OutboxService(IRepository<OutboxMessage> outbox, IPastelGateway pas
             return false;
         }
 
-        await outbox.AddAsync(new OutboxMessage
+        var message = await outbox.AddAsync(new OutboxMessage
         {
             Target = target,
             Type = type,
@@ -43,6 +43,7 @@ public class OutboxService(IRepository<OutboxMessage> outbox, IPastelGateway pas
             Status = OutboxStatus.Pending,
             CreatedAt = time.GetLocalNow().DateTime
         });
+        activity.Raise(message, IntegrationEvent.Queued);
         return true;
     }
 
@@ -51,33 +52,47 @@ public class OutboxService(IRepository<OutboxMessage> outbox, IPastelGateway pas
         int sent = 0, failed = 0;
         foreach (var message in await outbox.ListAsync(m => m.Status != OutboxStatus.Sent))
         {
-            message.Attempts++;
-            try
+            if (await SendAsync(message))
             {
-                if (message.Target == OutboxTarget.Pastel)
-                {
-                    await pastel.SendAsync(message);
-                }
-                else
-                {
-                    await pilot.SendAsync(message);
-                }
-                message.Status = OutboxStatus.Sent;
-                message.SentAt = time.GetLocalNow().DateTime;
-                message.LastError = null;
                 sent++;
             }
-            catch (IntegrationUnavailableException ex)
+            else
             {
-                message.Status = OutboxStatus.Failed;
-                message.LastError = ex.Message;
                 failed++;
             }
-            await outbox.UpdateAsync(message);
         }
         return (sent, failed);
     }
 
-    public async Task<List<OutboxMessage>> ListAsync() =>
-        (await outbox.ListAsync()).OrderByDescending(m => m.CreatedAt).ThenByDescending(m => m.Id).ToList();
+    /// <summary>Sends one message. Returns false (and marks it Failed, to retry later) if the system is unavailable.</summary>
+    public async Task<bool> SendAsync(OutboxMessage message)
+    {
+        message.Attempts++;
+        try
+        {
+            if (message.Target == OutboxTarget.Pastel)
+            {
+                await pastel.SendAsync(message);
+            }
+            else
+            {
+                await pilot.SendAsync(message);
+            }
+            message.Status = OutboxStatus.Sent;
+            message.SentAt = time.GetLocalNow().DateTime;
+            message.LastError = null;
+        }
+        catch (IntegrationUnavailableException ex)
+        {
+            message.Status = OutboxStatus.Failed;
+            message.LastError = ex.Message;
+        }
+        await outbox.UpdateAsync(message);
+        activity.Raise(message, message.Status == OutboxStatus.Sent ? IntegrationEvent.Sent : IntegrationEvent.Failed);
+        return message.Status == OutboxStatus.Sent;
+    }
+
+    public async Task<List<OutboxMessage>> ListAsync(OutboxStatus? status = null) =>
+        (await outbox.ListAsync(m => status == null || m.Status == status))
+            .OrderByDescending(m => m.CreatedAt).ThenByDescending(m => m.Id).ToList();
 }

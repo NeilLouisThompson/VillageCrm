@@ -9,6 +9,7 @@ public static class VillageServiceExtensions
     {
         services.Configure<VillageOptions>(configuration.GetSection(VillageOptions.Section));
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IntegrationActivity>();
 
         services.AddScoped<ViewerContext>();
         services.AddScoped<AuditService>();

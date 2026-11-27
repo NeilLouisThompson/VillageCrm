@@ -46,6 +46,8 @@ public static class MockSeed
             r.AccountNumber = $"RES{r.Id:0000}";
             r.KioskPinHash = demoPinHash;
             store.Table<Resident>().Update(r);
+            AddSentMessage(store, OutboxTarget.Pilot, "CustomerAccount", $"PILOT-{r.AccountNumber}-SEED", now.AddDays(-30),
+                VillageCrm.Integrations.PilotCustomer.From(r));
         }
 
         var medical = new[]
@@ -106,6 +108,10 @@ public static class MockSeed
         lighting.Variations.Add(new Variation { Description = "Add sensor lights at stairwells", Amount = 6_500, Approved = true });
         lighting.Costs.Add(new ProjectCost { Date = today.AddDays(-6), Kind = "Payment certificate", Description = "Certificate 1", Amount = 20_000 });
         store.Table<Project>().Add(lighting);
+        AddSentMessage(store, OutboxTarget.Pastel, "ProjectCostJournal", $"PRJ-{lighting.Id}-COST-1", today.AddDays(-6), new
+        {
+            lighting.CostCentre, Project = lighting.Name, Kind = "Payment certificate", Amount = 20_000m, Retention = 2_000m, NetPayable = 18_000m
+        });
 
         AddStock(store, "PL-001", "Tap washer set", "A1", "pack", 3, 5, 30, 18.50m);
         AddStock(store, "PL-002", "Tap cartridge 40 mm", "A1", "each", 6, 4, 15, 145m);
@@ -245,6 +251,14 @@ public static class MockSeed
             ]
         });
     }
+
+    // Messages already delivered before the demo starts, so the integration screens are not empty.
+    private static void AddSentMessage(MockStore store, OutboxTarget target, string type, string reference, DateTime when, object payload) =>
+        store.Table<OutboxMessage>().Add(new OutboxMessage
+        {
+            Target = target, Type = type, Reference = reference, Payload = System.Text.Json.JsonSerializer.Serialize(payload),
+            Status = OutboxStatus.Sent, Attempts = 1, CreatedAt = when, SentAt = when
+        });
 
     private static void AddStock(MockStore store, string code, string name, string bin, string unit, decimal onHand, decimal min, decimal max, decimal cost, StockStore storeType = StockStore.Maintenance) =>
         store.Table<StockItem>().Add(new StockItem { Store = storeType, Code = code, Name = name, Bin = bin, Unit = unit, OnHand = onHand, Min = min, Max = max, UnitCost = cost });

@@ -1,0 +1,69 @@
+@implements IDisposable
+@using VillageCrm.Integrations
+@inject IntegrationActivity Activity
+@inject DemoOutboxSender Sender
+@inject ViewerContext Viewer
+
+@* Demo only: shows each Pastel/Pilot message as it is queued and delivered, and plays the background sender. *@
+<div class="toasts" role="status" aria-live="polite">
+    @foreach (var t in _toasts)
+    {
+        <div class="toast @t.Css">
+            <strong>@t.Title</strong>
+            <span>@t.Text</span>
+            @if (Access.Allows(Viewer.Role, Area.Integrations))
+            {
+                <a href="integrations">See integrations</a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly TimeSpan SendAfter = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan ShowFor = TimeSpan.FromSeconds(6);
+
+    private record Toast(string Css, string Title, string Text);
+
+    private readonly List<Toast> _toasts = [];
+    private bool _sendScheduled;
+
+    protected override void OnInitialized() => Activity.Changed += OnActivity;
+
+    private void OnActivity(OutboxMessage m, IntegrationEvent kind)
+    {
+        if (kind == IntegrationEvent.Sending)
+        {
+            return;
+        }
+        var what = $"{IntegrationActivity.Label(m.Type)} {m.Reference}";
+        var toast = kind switch
+        {
+            IntegrationEvent.Queued => new Toast("queued", $"Queued for {m.Target}", what),
+            IntegrationEvent.Sent => new Toast("sent", $"{m.Target} received", what),
+            _ => new Toast("failed", $"{m.Target} not available", $"{what}: {m.LastError} It will be retried.")
+        };
+        _ = InvokeAsync(async () =>
+        {
+            _toasts.Add(toast);
+            StateHasChanged();
+            if (kind == IntegrationEvent.Queued && !_sendScheduled)
+            {
+                _sendScheduled = true;
+                _ = SendSoonAsync();
+            }
+            await Task.Delay(ShowFor);
+            _toasts.Remove(toast);
+            StateHasChanged();
+        });
+    }
+
+    private async Task SendSoonAsync()
+    {
+        await Task.Delay(SendAfter);
+        _sendScheduled = false;
+        await Sender.SendAsync(retryFailed: false);
+    }
+
+    public void Dispose() => Activity.Changed -= OnActivity;
+}

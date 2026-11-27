@@ -28,7 +28,7 @@ public static class Access
         [Area.Procurement] = [UserRole.FacilitiesManager, UserRole.Procurement, UserRole.Finance, UserRole.Manager],
         [Area.Compliance] = AllStaff,
         [Area.Dashboard] = [UserRole.FacilitiesManager, UserRole.Finance, UserRole.Manager],
-        [Area.Integrations] = [UserRole.Finance, UserRole.SystemAdmin],
+        [Area.Integrations] = [UserRole.Finance, UserRole.Manager, UserRole.SystemAdmin],
         [Area.Audit] = [UserRole.Manager, UserRole.SystemAdmin],
         [Area.ManageNotices] = [UserRole.Reception, UserRole.Manager],
         [Area.ManagePolicies] = [UserRole.Manager],
@@ -48,6 +48,19 @@ public static class Access
     };
 
     public static string WhoMay(Area area) => string.Join(", ", Rules[area].Select(Label));
+
+    /// <summary>Where a user lands after switching to this role. Always a page the role may see.</summary>
+    public static string StartPage(UserRole role) => role switch
+    {
+        UserRole.Reception or UserRole.Maintenance => "job-cards",
+        UserRole.Clinical => "census",
+        UserRole.FacilitiesManager => "assets",
+        UserRole.Procurement => "procurement",
+        UserRole.Finance or UserRole.SystemAdmin => "integrations",
+        UserRole.Manager => "dashboard",
+        UserRole.RestaurantSupervisor => "restaurant",
+        _ => "./"
+    };
 
     public static string Label(UserRole role) => role switch
     {

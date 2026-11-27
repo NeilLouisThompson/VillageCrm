@@ -43,7 +43,7 @@ public abstract class ViewerAwarePage : ComponentBase, IDisposable
         }
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         Viewer.Changed -= OnViewerChanged;
     }

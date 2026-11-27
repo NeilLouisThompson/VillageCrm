@@ -92,6 +92,8 @@ public static class MockIntegrationExtensions
     {
         services.AddSingleton<IPastelGateway, MockPastelGateway>();
         services.AddSingleton<IPilotGateway, MockPilotGateway>();
+        services.AddScoped<MockExternalSystems>();
+        services.AddScoped<DemoOutboxSender>();
         return services;
     }
 }

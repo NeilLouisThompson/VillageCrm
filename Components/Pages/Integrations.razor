@@ -1,62 +1,248 @@
 @page "/integrations"
 @inherits ViewerAwarePage
+@using VillageCrm.Integrations
 @inject OutboxService Outbox
+@inject DemoOutboxSender Sender
+@inject MockExternalSystems External
+@inject IntegrationActivity Activity
+@inject IOptionsMonitor<VillageOptions> Options
 
 <PageTitle>Integrations</PageTitle>
 
-<h1>Pastel and Pilot sync</h1>
+<h1>Pastel and Pilot integration</h1>
 <p class="help">
-    Mock connections only: nothing leaves this server. Every posting has a unique reference, so it is never sent twice.
-    Set <code>Village:SimulatePastelLocked</code> to <code>true</code> in appsettings.json to see a month-end lock and retry.
+    Demo: Sage Pastel (finance) and Pilot (point of sale) are simulated in your browser. Nothing leaves this page.
+    Every message has a unique reference, so it is never posted twice.
 </p>
 
 <RoleGate Area="Area.Integrations">
-    <div class="stats">
-        @foreach (var g in _messages.GroupBy(m => (m.Target, m.Status)).OrderBy(g => g.Key.Target).ThenBy(g => g.Key.Status))
+    <div class="tabs" role="tablist">
+        @foreach (var (key, label) in Tabs)
         {
-            <div class="stat"><span class="stat-value">@g.Count()</span>@g.Key.Target - @g.Key.Status</div>
+            <button role="tab" class="tab @(_tab == key ? "active" : "")" aria-selected="@(_tab == key)" @onclick="() => _tab = key">@label</button>
         }
     </div>
 
-    <div class="actions">
-        <button class="btn" @onclick="Process">Send waiting messages now</button>
-    </div>
-    @if (_result is not null)
+    @switch (_tab)
     {
-        <p role="status">@_result</p>
-    }
+        case "flow":
+            <p class="lead">Village Care is the master for residents, jobs, purchasing and projects. It tells Pastel and Pilot what they need, and reads back what it needs.</p>
+            <div class="flow-map" aria-hidden="true">
+                <div class="system pilot">Pilot<br /><small>tills, restaurant, bar, shop</small></div>
+                <div class="system village">Village Care<br /><small>this system</small></div>
+                <div class="system pastel">Sage Pastel<br /><small>debtors, creditors, ledger</small></div>
+            </div>
+            <table class="big-table flows">
+                <thead><tr><th>From</th><th></th><th>To</th><th>What</th><th>Started by</th><th>How</th><th>So far</th></tr></thead>
+                <tbody>
+                    @foreach (var f in Flows)
+                    {
+                        <tr>
+                            <td><span class="sys-chip @f.From.ToLowerInvariant().Replace(" ", "-")">@f.From</span></td>
+                            <td class="arrow">→</td>
+                            <td><span class="sys-chip @f.To.ToLowerInvariant().Replace(" ", "-")">@f.To</span></td>
+                            <td><strong>@f.What</strong><br /><small>@f.Detail</small></td>
+                            <td>@f.Trigger</td>
+                            <td><small>@f.How</small></td>
+                            <td>@(f.Type is null ? "" : $"{_messages.Count(m => m.Type == f.Type && m.Status == OutboxStatus.Sent)} sent")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="help">Try it: approve a job card charge, match a purchase invoice, add a project cost, or edit a resident. A notice shows the message being queued and then received.</p>
+            break;
 
-    <table class="big-table">
-        <thead><tr><th>Created</th><th>To</th><th>Type</th><th>Reference</th><th>Status</th><th>Attempts</th><th>Details</th></tr></thead>
-        <tbody>
-            @foreach (var m in _messages)
+        case "outbox":
+            <div class="card">
+                <label class="check">
+                    <input type="checkbox" checked="@Options.CurrentValue.SimulatePastelLocked" @onchange="ToggleLock" />
+                    Simulate Pastel month-end lock (Pastel refuses postings until it is unlocked)
+                </label>
+            </div>
+            <div class="stats">
+                @foreach (var g in _messages.GroupBy(m => (m.Target, m.Status)).OrderBy(g => g.Key.Target).ThenBy(g => g.Key.Status))
+                {
+                    <div class="stat"><span class="stat-value">@g.Count()</span>@g.Key.Target - @g.Key.Status</div>
+                }
+            </div>
+            <div class="actions">
+                <button class="btn" disabled="@_busy" @onclick="SendNow">@(_busy ? "Sending..." : "Send waiting messages now")</button>
+            </div>
+            @if (_result is not null)
             {
-                <tr>
-                    <td>@Format.When(m.CreatedAt)</td>
-                    <td>@m.Target</td>
-                    <td>@m.Type</td>
-                    <td><small>@m.Reference</small></td>
-                    <td><span class="pill @(m.Status switch { OutboxStatus.Sent => "ok", OutboxStatus.Failed => "urgent", _ => "normal" })">@m.Status</span></td>
-                    <td>@m.Attempts</td>
-                    <td><small>@(m.LastError ?? m.Payload)</small></td>
-                </tr>
+                <p role="status">@_result</p>
             }
-        </tbody>
-    </table>
+            <table class="big-table">
+                <thead><tr><th>Created</th><th>To</th><th>What</th><th>Reference</th><th>Status</th><th>Attempts</th><th>Details</th></tr></thead>
+                <tbody>
+                    @foreach (var m in _messages)
+                    {
+                        var sending = m.Id == _sendingId;
+                        <tr class="@(sending ? "sending" : "")">
+                            <td>@Format.When(m.CreatedAt)</td>
+                            <td><span class="sys-chip @m.Target.ToString().ToLowerInvariant()">@m.Target</span></td>
+                            <td>@IntegrationActivity.Label(m.Type)</td>
+                            <td><small>@m.Reference</small></td>
+                            <td>
+                                @if (sending)
+                                {
+                                    <span class="pill normal">Sending...</span>
+                                }
+                                else
+                                {
+                                    <span class="pill @(m.Status switch { OutboxStatus.Sent => "ok", OutboxStatus.Failed => "urgent", _ => "normal" })">@m.Status</span>
+                                }
+                            </td>
+                            <td>@m.Attempts</td>
+                            <td><small>@(m.LastError ?? m.Payload)</small></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            break;
+
+        case "pastel":
+            <div class="external pastel">
+                <div class="external-bar">Sage Pastel <small>(simulated)</small> · @(Options.CurrentValue.SimulatePastelLocked ? "Company locked for month-end" : "Open")</div>
+                <p class="help">What Pastel has received. Village Care sends resident charges, supplier invoices and project journals. Pilot posts dining room charges itself.</p>
+                @foreach (var ledger in _postings.GroupBy(p => p.Ledger))
+                {
+                    <h2>@ledger.Key <small class="muted">(@ledger.Count(), @Format.Money(ledger.Sum(p => p.Amount)))</small></h2>
+                    <table class="big-table">
+                        <thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th class="num">Amount</th><th>Posted by</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in ledger)
+                            {
+                                <tr>
+                                    <td>@Format.Date(p.Date)</td>
+                                    <td><small>@p.Reference</small></td>
+                                    <td>@p.Account</td>
+                                    <td>@p.Description</td>
+                                    <td class="num">@Format.Money(p.Amount)</td>
+                                    <td><span class="sys-chip @(p.PostedBy == "Pilot" ? "pilot" : "village-care")">@p.PostedBy</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            break;
+
+        case "pilot":
+            <div class="external pilot">
+                <div class="external-bar">Pilot POS <small>(simulated)</small></div>
+                <h2>Customer accounts <small class="muted">(@_customers.Count)</small></h2>
+                <p class="help">Sent by Village Care. Pilot gets the dietary flag only when the resident consented, and never any medical data.</p>
+                <table class="big-table">
+                    <thead><tr><th>Account</th><th>Name</th><th>Unit</th><th>Active</th><th>Dietary flag</th><th>Last update</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in _customers)
+                        {
+                            <tr>
+                                <td>@c.Customer.AccountNumber</td>
+                                <td>@c.Customer.Name</td>
+                                <td>@c.Customer.Unit</td>
+                                <td>@(c.Customer.Active ? "Yes" : "No")</td>
+                                <td>
+                                    @if (c.Customer.DietaryFlag is null)
+                                    {
+                                        <span class="muted">Not shared (no consent)</span>
+                                    }
+                                    else
+                                    {
+                                        @c.Customer.DietaryFlag
+                                    }
+                                </td>
+                                <td>@Format.When(c.ReceivedAt)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <h2>Till sales today <small class="muted">(@_sales.Count)</small></h2>
+                <p class="help">Rung up on the Pilot tills. Pilot posts the money to Pastel; Village Care imports the quantities to reduce bar and shop stock (Stock page).</p>
+                <table class="big-table">
+                    <thead><tr><th>Reference</th><th>Store</th><th>Item</th><th class="num">Quantity</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in _sales)
+                        {
+                            <tr><td><small>@s.Reference</small></td><td>@s.Store</td><td>@s.ItemName</td><td class="num">@s.Quantity</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            break;
+    }
 </RoleGate>
 
 @code {
+    private static readonly (string Key, string Label)[] Tabs =
+        [("flow", "How it works"), ("outbox", "Outbox"), ("pastel", "Pastel (simulated)"), ("pilot", "Pilot (simulated)")];
+
+    private record Flow(string From, string To, string What, string Detail, string Trigger, string How, string? Type);
+
+    private static readonly Flow[] Flows =
+    [
+        new("Village Care", "Pastel", "Resident charge", "Cost of a job the resident pays for", "Job cards: approve charge", "Queued, then sent", "DebtorCharge"),
+        new("Village Care", "Pastel", "Supplier invoice", "Only when order, delivery and invoice agree", "Procurement: match invoice", "Queued, then sent", "SupplierInvoice"),
+        new("Village Care", "Pastel", "Project cost journal", "Certificate or cost to the cost centre, less retention", "Projects: add cost", "Queued, then sent", "ProjectCostJournal"),
+        new("Village Care", "Pilot", "Customer account", "Name, unit, active, dietary flag (with consent only)", "Residents: add, edit, consent, movement", "Queued, then sent", "CustomerAccount"),
+        new("Pastel", "Village Care", "Account statement", "Levies, payments and charges", "Resident account, kiosk \"My account\"", "Read when opened", null),
+        new("Pilot", "Village Care", "Till sales", "Bar and shop items sold", "Stock: import today's sales", "Read when imported", null),
+        new("Pilot", "Pastel", "Meal and till charges", "Pilot posts these itself", "Restaurant: meal attended", "Pilot to Pastel directly", null)
+    ];
+
+    private string _tab = "flow";
     private List<OutboxMessage> _messages = [];
+    private List<PastelPosting> _postings = [];
+    private List<PilotCustomerRecord> _customers = [];
+    private List<PilotTillSale> _sales = [];
+    private int? _sendingId;
+    private bool _busy;
     private string? _result;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
-
-    private async Task LoadAsync() => _messages = await Outbox.ListAsync();
-
-    private async Task Process()
+    protected override async Task OnInitializedAsync()
     {
-        var (sent, failed) = await Outbox.ProcessAsync();
-        _result = $"{sent} sent, {failed} failed (failed messages are retried next time).";
+        Activity.Changed += OnActivity;
         await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _messages = await Outbox.ListAsync();
+        _postings = await External.PastelPostingsAsync();
+        _customers = await External.PilotCustomersAsync();
+        _sales = await External.PilotTillSalesAsync(DateTime.Today);
+    }
+
+    private void OnActivity(OutboxMessage message, IntegrationEvent kind) => _ = InvokeAsync(async () =>
+    {
+        _sendingId = kind == IntegrationEvent.Sending ? message.Id : null;
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private async Task SendNow()
+    {
+        _busy = true;
+        _result = null;
+        var (sent, failed) = await Sender.SendAsync(retryFailed: true);
+        _busy = false;
+        _result = $"{sent} sent, {failed} failed" + (failed > 0 ? " (failed messages wait and are retried)." : ".");
+    }
+
+    private async Task ToggleLock(ChangeEventArgs e)
+    {
+        Options.CurrentValue.SimulatePastelLocked = e.Value is true;
+        if (!Options.CurrentValue.SimulatePastelLocked && _messages.Any(m => m.Status == OutboxStatus.Failed))
+        {
+            await SendNow();
+        }
+    }
+
+    public override void Dispose()
+    {
+        Activity.Changed -= OnActivity;
+        base.Dispose();
     }
 }

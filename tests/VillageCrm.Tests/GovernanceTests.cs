@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using VillageCrm.Integrations;
 using VillageCrm.Models;
 using VillageCrm.Services;
 
@@ -115,10 +116,62 @@ public class GovernanceTests
     }
 
     [Fact]
+    public async Task Outbox_reports_queued_failed_and_sent_so_the_demo_can_show_the_flow()
+    {
+        var app = new TestApp();
+        var events = new List<(string, IntegrationEvent)>();
+        app.Get<IntegrationActivity>().Changed += (m, kind) => events.Add((m.Reference, kind));
+        var outbox = app.Get<OutboxService>();
+        var options = app.Get<IOptionsMonitor<VillageOptions>>().CurrentValue;
+
+        await outbox.EnqueueAsync(OutboxTarget.Pastel, "Test", "REF-1", new { A = 1 });
+        options.SimulatePastelLocked = true;
+        await outbox.ProcessAsync();
+        options.SimulatePastelLocked = false;
+        await outbox.ProcessAsync();
+
+        Assert.Equal([("REF-1", IntegrationEvent.Queued), ("REF-1", IntegrationEvent.Failed), ("REF-1", IntegrationEvent.Sent)], events);
+    }
+
+    [Fact]
+    public async Task Simulated_Pastel_and_Pilot_show_only_what_they_received()
+    {
+        var app = new TestApp();
+        var outbox = app.Get<OutboxService>();
+        var external = app.Get<MockExternalSystems>();
+        var resident = await app.AddResidentAsync(dietary: "Soft food", dataSharing: false);
+        await outbox.EnqueueAsync(OutboxTarget.Pastel, "DebtorCharge", "JOB-9-CHARGE",
+            new { resident.AccountNumber, Amount = 150m, Description = "Job 9: Plumbing" });
+
+        Assert.Empty(await external.PastelPostingsAsync());
+        Assert.Empty(await external.PilotCustomersAsync());
+
+        await app.Get<ResidentService>().RecordMovementAsync(resident.Id, MovementType.Deceased, "", "Reception");
+        await outbox.ProcessAsync();
+
+        var posting = Assert.Single(await external.PastelPostingsAsync());
+        Assert.Equal(("Debtors", resident.AccountNumber, 150m), (posting.Ledger, posting.Account, posting.Amount));
+        var customer = Assert.Single(await external.PilotCustomersAsync()).Customer;
+        Assert.False(customer.Active);
+        Assert.Null(customer.DietaryFlag);
+    }
+
+    [Fact]
     public void Medical_access_is_clinical_only_and_residents_get_no_staff_links()
     {
         Assert.Equal([UserRole.Clinical], Enum.GetValues<UserRole>().Where(r => Access.Allows(r, Area.Medical)));
         Assert.DoesNotContain(Access.NavLinks(UserRole.Resident), l => l.Href is "residents" or "job-cards" or "audit");
+    }
+
+    [Fact]
+    public void Every_role_starts_on_a_page_it_may_see()
+    {
+        foreach (var role in Enum.GetValues<UserRole>())
+        {
+            var start = Access.StartPage(role);
+            Assert.True(start == "./" || Access.NavLinks(role).Any(l => l.Href == start), $"{role} -> {start}");
+        }
+        Assert.Equal("./", Access.StartPage(UserRole.Resident));
     }
 
     [Fact]
