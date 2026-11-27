@@ -1,8 +1,11 @@
 # Village Care (Demo)
 
 A mock Blazor application for the retirement village design. It uses .NET 10,
-Blazor Web App with interactive server rendering, and in-memory sample data.
+Blazor WebAssembly (runs entirely in the browser), and in-memory sample data.
 All names and records are invented.
+
+**Live demo:** https://neillouisthompson.github.io/VillageCrm/ (deployed from `main`
+by [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml)).
 
 ## Run it
 
@@ -30,7 +33,9 @@ access changes. Medical data is only shown to Clinical.
 ## Notes
 
 - This is a demo. Sign-in is simulated by the role selector, and there is no database.
-- Data is shared across all users and resets when the app restarts.
+- Data lives in each visitor's browser and resets when the page is refreshed.
+  Every seeded resident's kiosk PIN is `0000`.
+- Settings are in `wwwroot/appsettings.json` (downloaded by the browser, so never put secrets there).
 - Replace MockDataService with a real repository (for example SQL Server with
   Entity Framework Core) when moving on to the real build.
 - Compliance items are examples only. Confirm real obligations with a legal adviser.

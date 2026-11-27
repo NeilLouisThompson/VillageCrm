@@ -1,0 +1,52 @@
+name: Deploy demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test VillageCrm.slnx
+
+      - name: Publish
+        run: dotnet publish VillageCrm.csproj -c Release -o publish
+
+      # Pages serves the site from /<repo-name>/. 404.html lets deep links and refreshes load the app.
+      - name: Prepare for GitHub Pages
+        run: |
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|' publish/wwwroot/index.html
+          cp publish/wwwroot/index.html publish/wwwroot/404.html
+          touch publish/wwwroot/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: publish/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

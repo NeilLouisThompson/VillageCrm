@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Village Care (Demo)</title>
+    <base href="/" />
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="app.css" />
+    <script type="importmap"></script>
+</head>
+<body>
+    <div id="app">Loading Village Care...</div>
+    <script>
+        window.downloadFile = (fileName, contentType, text) => {
+            const url = URL.createObjectURL(new Blob([text], { type: contentType }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+    </script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+</html>

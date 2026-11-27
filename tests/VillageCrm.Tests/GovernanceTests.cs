@@ -118,7 +118,7 @@ public class GovernanceTests
     public void Medical_access_is_clinical_only_and_residents_get_no_staff_links()
     {
         Assert.Equal([UserRole.Clinical], Enum.GetValues<UserRole>().Where(r => Access.Allows(r, Area.Medical)));
-        Assert.DoesNotContain(Access.NavLinks(UserRole.Resident), l => l.Href is "/residents" or "/job-cards" or "/audit");
+        Assert.DoesNotContain(Access.NavLinks(UserRole.Resident), l => l.Href is "residents" or "job-cards" or "audit");
     }
 
     [Fact]

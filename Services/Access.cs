@@ -62,32 +62,32 @@ public static class Access
     {
         if (role == UserRole.Resident)
         {
-            yield return ("/report", "Report a problem");
-            yield return ("/meals", "Meals");
-            yield return ("/my-requests", "My requests");
-            yield return ("/notices", "Notices");
-            yield return ("/policies", "Village rules");
-            yield return ("/directory", "Directory");
-            yield return ("/my-details", "My details");
+            yield return ("report", "Report a problem");
+            yield return ("meals", "Meals");
+            yield return ("my-requests", "My requests");
+            yield return ("notices", "Notices");
+            yield return ("policies", "Village rules");
+            yield return ("directory", "Directory");
+            yield return ("my-details", "My details");
             yield break;
         }
 
-        if (Allows(role, Area.Dashboard)) yield return ("/dashboard", "Dashboard");
-        yield return ("/report", "Log a job");
-        if (Allows(role, Area.JobCards)) yield return ("/job-cards", "Job cards");
-        if (Allows(role, Area.Residents)) yield return ("/residents", "Residents");
-        if (Allows(role, Area.Census)) yield return ("/census", "Census");
-        if (Allows(role, Area.Restaurant)) yield return ("/restaurant", "Restaurant");
-        if (Allows(role, Area.Maintenance)) yield return ("/assets", "Maintenance");
-        if (Allows(role, Area.Projects)) yield return ("/projects", "Projects");
-        if (Allows(role, Area.Contractors)) yield return ("/contractors", "Contractors");
-        if (Allows(role, Area.Stock)) yield return ("/stock", "Stock");
-        if (Allows(role, Area.Procurement)) yield return ("/procurement", "Procurement");
-        yield return ("/policies", "Policies");
-        yield return ("/compliance", "Compliance");
-        yield return ("/notices", "Notices");
-        if (Allows(role, Area.Integrations)) yield return ("/integrations", "Integrations");
-        if (Allows(role, Area.Audit)) yield return ("/audit", "Audit log");
-        yield return ("/kiosk", "Kiosk");
+        if (Allows(role, Area.Dashboard)) yield return ("dashboard", "Dashboard");
+        yield return ("report", "Log a job");
+        if (Allows(role, Area.JobCards)) yield return ("job-cards", "Job cards");
+        if (Allows(role, Area.Residents)) yield return ("residents", "Residents");
+        if (Allows(role, Area.Census)) yield return ("census", "Census");
+        if (Allows(role, Area.Restaurant)) yield return ("restaurant", "Restaurant");
+        if (Allows(role, Area.Maintenance)) yield return ("assets", "Maintenance");
+        if (Allows(role, Area.Projects)) yield return ("projects", "Projects");
+        if (Allows(role, Area.Contractors)) yield return ("contractors", "Contractors");
+        if (Allows(role, Area.Stock)) yield return ("stock", "Stock");
+        if (Allows(role, Area.Procurement)) yield return ("procurement", "Procurement");
+        yield return ("policies", "Policies");
+        yield return ("compliance", "Compliance");
+        yield return ("notices", "Notices");
+        if (Allows(role, Area.Integrations)) yield return ("integrations", "Integrations");
+        if (Allows(role, Area.Audit)) yield return ("audit", "Audit log");
+        yield return ("kiosk", "Kiosk");
     }
 }

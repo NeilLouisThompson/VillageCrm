@@ -1,12 +1,11 @@
 @inherits LayoutComponentBase
 @implements IDisposable
-@using System.Security.Cryptography
-@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using System.Text.Json
 @inject ViewerContext Viewer
 @inject IRepository<StaffMember> StaffRepo
 @inject IRepository<Resident> ResidentRepo
 @inject IOptions<VillageOptions> Options
-@inject ProtectedLocalStorage Storage
+@inject IJSRuntime JS
 
 <div class="app @(Viewer.BiggerText ? "bigger" : "")">
     <div class="emergency" role="note">
@@ -14,9 +13,9 @@
     </div>
 
     <header class="topbar">
-        <a class="brand" href="/">@Options.Value.VillageName</a>
+        <a class="brand" href="./">@Options.Value.VillageName</a>
         <nav aria-label="Main navigation">
-            <a href="/">Home</a>
+            <a href="./">Home</a>
             @foreach (var link in Access.NavLinks(Viewer.Role))
             {
                 <a href="@link.Href">@link.Text</a>
@@ -135,18 +134,19 @@
     private void SetStaff(UserRole role) =>
         Viewer.SetStaff(role, _staff.FirstOrDefault(s => s.Role == role)?.FullName ?? $"{Access.Label(role)} staff");
 
-    private Task SaveAsync() => Storage.SetAsync(StorageKey, new SavedViewer(Viewer.Role, Viewer.ResidentId)).AsTask();
+    private Task SaveAsync() =>
+        JS.InvokeVoidAsync("localStorage.setItem", StorageKey, JsonSerializer.Serialize(new SavedViewer(Viewer.Role, Viewer.ResidentId))).AsTask();
 
     private async Task<SavedViewer?> LoadSavedAsync()
     {
+        var json = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
         try
         {
-            var result = await Storage.GetAsync<SavedViewer>(StorageKey);
-            return result.Success ? result.Value : null;
+            return string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<SavedViewer>(json);
         }
-        catch (CryptographicException)
+        catch (JsonException)
         {
-            // Saved value from an older data-protection key; fall back to the default role.
+            // Unreadable saved value; fall back to the default role.
             return null;
         }
     }

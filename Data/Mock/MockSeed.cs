@@ -38,12 +38,13 @@ public static class MockSeed
         residents[3].Movements.Add(new MovementEntry { When = now.AddDays(-5), Type = MovementType.Holiday, Note = "Visiting family in Durban", RecordedBy = "Lindiwe Khumalo" });
         residents[5].WelfareMonitoringConsent = true;
         residents[6].WelfareMonitoringConsent = true;
+        // Demo only: every seeded resident's kiosk PIN is 0000. Hashed once, as PBKDF2 is slow in the browser.
+        var demoPinHash = VillageCrm.Services.PinHasher.Hash("0000");
         foreach (var r in residents)
         {
             store.Table<Resident>().Add(r);
             r.AccountNumber = $"RES{r.Id:0000}";
-            // Demo only: every seeded resident's kiosk PIN is 0000.
-            r.KioskPinHash = VillageCrm.Services.PinHasher.Hash("0000");
+            r.KioskPinHash = demoPinHash;
             store.Table<Resident>().Update(r);
         }
 

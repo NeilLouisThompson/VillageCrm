@@ -17,7 +17,7 @@
                 <ul>
                     @foreach (var w in _welfare)
                     {
-                        <li><a href="/residents/@w.Resident.Id">@w.Resident.FullName</a> (unit @w.Resident.Unit): last dining room meal @(w.LastMeal is null ? "not recorded" : Format.Date(w.LastMeal))</li>
+                        <li><a href="residents/@w.Resident.Id">@w.Resident.FullName</a> (unit @w.Resident.Unit): last dining room meal @(w.LastMeal is null ? "not recorded" : Format.Date(w.LastMeal))</li>
                     }
                 </ul>
             </div>
@@ -40,7 +40,7 @@
                         {
                             var last = r.Movements.FirstOrDefault();
                             <tr>
-                                <td><a href="/residents/@r.Id">@r.FullName</a></td>
+                                <td><a href="residents/@r.Id">@r.FullName</a></td>
                                 <td>@r.Unit</td>
                                 <td>@Format.Words(r.CareLevel)</td>
                                 <td>@(last is null ? "" : $"{Format.Words(last.Type)} - {Format.When(last.When)}")</td>

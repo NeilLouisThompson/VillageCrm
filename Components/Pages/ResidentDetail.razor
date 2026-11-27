@@ -7,13 +7,13 @@
     @if (_resident is null)
     {
         <h1>Resident not found</h1>
-        <p><a href="/residents">Back to residents</a></p>
+        <p><a href="residents">Back to residents</a></p>
     }
     else
     {
         <PageTitle>@_resident.FullName</PageTitle>
         <h1>@_resident.FullName</h1>
-        <p><a href="/residents">Back to residents</a></p>
+        <p><a href="residents">Back to residents</a></p>
 
         <ErrorMessage Message="@Error" />
 
