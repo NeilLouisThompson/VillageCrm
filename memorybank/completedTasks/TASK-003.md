@@ -61,18 +61,18 @@ Feasible, low-risk conversion: ~2 new files, 1 deleted, 1 moved, ~15 small edits
 
 ## Deliver
 ### Implementation Plan
-- [ ] 0. (Done, pre-approved by request) `git init`, `.gitignore`, baseline commit of current Server version; push once repo exists.
-- [ ] 1. `VillageCrm.csproj`: SDK → BlazorWebAssembly; `OverrideHtmlAssetPlaceholders`; add `Microsoft.AspNetCore.Components.WebAssembly` + `.DevServer` 10.0.15.
-- [ ] 2. `Program.cs`: `WebAssemblyHostBuilder`, root `Routes` → `#app`, `HeadOutlet` → `head::after`; keep the three `Add…` registrations; remove CSV endpoint.
-- [ ] 3. Add `wwwroot/index.html` (template-based, title "Village Care (Demo)", `app.css`, `downloadFile` JS helper); delete `Components/App.razor`.
-- [ ] 4. Move `appsettings.json` → `wwwroot/appsettings.json`.
-- [ ] 5. `MainLayout.razor`: replace `ProtectedLocalStorage` with `IJSRuntime` `localStorage` + `System.Text.Json` (same key, same `SavedViewer` record).
-- [ ] 6. `DashboardPage.razor`: export button → `DashboardService.ToCsv(...)` → `downloadFile` JS (same filename format).
-- [ ] 7. Make all internal links base-relative (`Access.NavLinks`, layouts, pages, `Routes`); update `GovernanceTests` assertion.
-- [ ] 8. `launchSettings.json`: add `inspectUri`.
-- [ ] 9. Measure startup; only if PIN seeding is slow, hash `"0000"` once in `MockSeed` and reuse for all seeded residents.
-- [ ] 10. `.github/workflows/deploy-pages.yml`: on push to `main` + manual; setup .NET 10 → `dotnet test` → `dotnet publish` → set `<base href="/VillageCrm/">` → `404.html` + `.nojekyll` → upload & deploy.
-- [ ] 11. Enable Pages (source = GitHub Actions) via `gh api`, push, watch the run, smoke-test the live URL (nav, deep link refresh, role switch, kiosk PIN 0000, CSV export).
+- [x] 0. (Done, pre-approved by request) `git init`, `.gitignore`, baseline commit of current Server version; push once repo exists.
+- [x] 1. `VillageCrm.csproj`: SDK → BlazorWebAssembly; `OverrideHtmlAssetPlaceholders`; add `Microsoft.AspNetCore.Components.WebAssembly` + `.DevServer` 10.0.15.
+- [x] 2. `Program.cs`: `WebAssemblyHostBuilder`, root `Routes` → `#app`, `HeadOutlet` → `head::after`; keep the three `Add…` registrations; remove CSV endpoint.
+- [x] 3. Add `wwwroot/index.html` (template-based, title "Village Care (Demo)", `app.css`, `downloadFile` JS helper); delete `Components/App.razor`.
+- [x] 4. Move `appsettings.json` → `wwwroot/appsettings.json`.
+- [x] 5. `MainLayout.razor`: replace `ProtectedLocalStorage` with `IJSRuntime` `localStorage` + `System.Text.Json` (same key, same `SavedViewer` record).
+- [x] 6. `DashboardPage.razor`: export button → `DashboardService.ToCsv(...)` → `downloadFile` JS (same filename format).
+- [x] 7. Make all internal links base-relative (`Access.NavLinks`, layouts, pages, `Routes`); update `GovernanceTests` assertion.
+- [x] 8. `launchSettings.json`: add `inspectUri`.
+- [x] 9. Measure startup; only if PIN seeding is slow, hash `"0000"` once in `MockSeed` and reuse for all seeded residents.
+- [x] 10. `.github/workflows/deploy-pages.yml`: on push to `main` + manual; setup .NET 10 → `dotnet test` → `dotnet publish` → set `<base href="/VillageCrm/">` → `404.html` + `.nojekyll` → upload & deploy.
+- [x] 11. Enable Pages (source = GitHub Actions) via `gh api`, push, watch the run, smoke-test the live URL (nav, deep link refresh, role switch, kiosk PIN 0000, CSV export).
 
 ### Approval
 - **Status**: ✅ Approved
@@ -100,9 +100,18 @@ Feasible, low-risk conversion: ~2 new files, 1 deleted, 1 moved, ~15 small edits
 - Output: Workflow run 45953867836 green (build 1m20s, deploy 12s). Live checks on https://neillouisthompson.github.io/VillageCrm/: deep link `/residents/2` loads (~3.2s cold), nav OK, role persists over reload, CSV downloads (24 lines), kiosk PIN 0000 opens account. Only console errors are the expected 404 status of deep-link documents (served via 404.html).
 
 ### Human Verification
-- **Status**: ⏳ Awaiting
-- **Feedback**:
+- **Status**: ✅ Confirmed (2026-11-27)
+- **Feedback**: User confirmed; asked to finish and push.
 
 ## Document
-- **Summary**:
+- **Summary**: Converted the app from Blazor Server to standalone Blazor WebAssembly so it runs as static files. Role persistence moved to `localStorage`, CSV export moved into the browser, all internal links made base-relative, and the demo PIN is hashed once at seed time (startup 13s → ~2.6s). Added a GitHub Actions workflow that tests, publishes and deploys to GitHub Pages. Pushed to `NeilLouisThompson/VillageCrm` as collaborator `thompsonataccso`. Live at https://neillouisthompson.github.io/VillageCrm/.
 - **Documentation Updated**:
+  - `features.md`: public demo, role switcher, CSV export
+  - `architecture.md`: WASM structure, modules, design decisions
+  - `integrations.md`: GitHub Pages
+  - `setup.md`: prerequisites, run, test, deploy
+  - `components/static-hosting.md`: new
+  - `README.md`: live link, hosting notes, component doc link
+  - `project-context.md`: N/A (still an unpopulated placeholder, so there is nothing to update; run `generate-project-context` to create it)
+  - `changelog.md`: N/A (no out-of-scope changes)
+  - Alignment check: features, architecture and the component doc agree; project-context has no rules yet

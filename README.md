@@ -74,3 +74,4 @@ All development follows the **D5 agentic workflow** with continuous progress tra
 | File | Contents |
 |------|----------|
 | [memorybank/components/_index.md](memorybank/components/_index.md) | Template and conventions for component docs |
+| [memorybank/components/static-hosting.md](memorybank/components/static-hosting.md) | Blazor WebAssembly hosting, GitHub Pages deploy, browser-side storage and export |
