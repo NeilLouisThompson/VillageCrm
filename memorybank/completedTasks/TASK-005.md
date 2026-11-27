@@ -104,9 +104,16 @@ UI-heavy but low-risk. Business services are unchanged except `OutboxService` (e
 - Output: Browser check on a Pages-style local build as Village manager: flow tab lists 7 flows with live counts (Pilot 8, journals 1); Pastel shows General ledger + Debtors (Pilot meals); Pilot shows 8 customers ('Not shared (no consent)' where applicable) and 6 till sales. Saving consent → 'Queued for Pilot' then 'Pilot received' (~3s). With the lock on, adding a project cost → 'Pastel not available… will be retried'; unlocking → 'Sending…' row, '1 sent, 0 failed', 'Pastel received', and the cost appears in Pastel's ledger. No page errors.
 
 ### Human Verification
-- **Status**: ⏳ Awaiting
-- **Feedback**:
+- **Status**: ✅ Confirmed (2026-11-27)
+- **Feedback**: User: "Perfect thanks".
 
 ## Document
-- **Summary**:
+- **Summary**: Integrations page rebuilt with flow overview, outbox (animated send, Pastel month-end lock switch), and simulated Pastel/Pilot screens. Notices and a demo background sender show each message being queued, received or failing. Seeded sent messages; Village manager can open Integrations. `OutboxService` gained a per-message `SendAsync` and activity events; `ViewerAwarePage.Dispose` made virtual.
 - **Documentation Updated**:
+  - `features.md`: integration row
+  - `architecture.md`: modules and data flow
+  - `integrations.md`: Pastel and Pilot (simulated)
+  - `components/pastel-pilot-integration.md`: new; `static-hosting.md`: related links
+  - `README.md`: component doc links
+  - `setup.md`, `project-context.md` (placeholder), `changelog.md`: N/A
+  - Alignment check: features, architecture and component docs agree

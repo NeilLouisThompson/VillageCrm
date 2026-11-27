@@ -69,9 +69,14 @@ Small change: one mapping, two calls in `MainLayout`, one test.
 - Output: Browser check on a Pages-style local build: every role lands on its start page and none shows the 'This page is for' gate; resident switch → Home; deep link `/residents` is not redirected on load; reload keeps the role. No page errors.
 
 ### Human Verification
-- **Status**: ⏳ Awaiting
-- **Feedback**:
+- **Status**: ✅ Confirmed (2026-11-27)
+- **Feedback**: User: "Perfect thanks".
 
 ## Document
-- **Summary**:
+- **Summary**: Switching the demo role or resident now navigates to the role's start page (`Access.StartPage`); restoring on load does not. New test checks every start page is allowed.
 - **Documentation Updated**:
+  - `features.md`: role switcher row
+  - `architecture.md`: `MainLayout` responsibility
+  - `components/demo-role-switcher.md`: new
+  - `integrations.md`, `setup.md`, `project-context.md` (placeholder), `changelog.md`: N/A
+  - Alignment check: features, architecture and component docs agree

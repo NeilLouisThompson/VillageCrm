@@ -48,4 +48,5 @@ Browser → index.html → blazor.webassembly.js → Program.cs (WebAssemblyHost
 - Cold first load downloads the .NET runtime (several MB), which takes a few seconds.
 
 ## Related Components
-- None documented yet.
+- [demo-role-switcher.md](demo-role-switcher.md)
+- [pastel-pilot-integration.md](pastel-pilot-integration.md)

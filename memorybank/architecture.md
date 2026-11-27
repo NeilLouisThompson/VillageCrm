@@ -21,11 +21,16 @@ Standalone **Blazor WebAssembly** app on .NET 10 (`Microsoft.NET.Sdk.BlazorWebAs
 |--------|---------------|
 | `MockDataLayerExtensions` / `MockStore` | Repositories over in-memory tables. In WASM a singleton lives per browser tab |
 | `VillageServiceExtensions` | Registers all business services and binds `VillageOptions` |
-| `MainLayout` | Shell, navigation, demo role switcher (persisted in `localStorage` via `IJSRuntime`) |
+| `MainLayout` | Shell, navigation, demo role switcher (persisted in `localStorage` via `IJSRuntime`; navigates to `Access.StartPage` on change), integration notices |
+| `OutboxService` | Queue for Pastel/Pilot: idempotent `EnqueueAsync`, per-message `SendAsync`, `ProcessAsync`; raises `IntegrationActivity` events |
+| `IntegrationActivity` (singleton) | Queued / Sending / Sent / Failed events for the UI |
+| `Integrations/` mocks | `MockPastelGateway`, `MockPilotGateway`, plus demo-only `MockExternalSystems` (what the simulated systems hold) and `DemoOutboxSender` (plays the background worker) |
 
 ## Data Flow
 
 Page → service (scoped) → `IRepository<T>` → `MockStore`, all in the browser. Nothing is sent to a server; data resets when the page is reloaded.
+
+Integrations: service → `OutboxService.EnqueueAsync` → (≈3 s later, `DemoOutboxSender` from `IntegrationToasts`) → `OutboxService.SendAsync` → mock gateway. The simulated Pastel/Pilot screens are built from **sent** outbox messages.
 
 ## Key Design Decisions
 

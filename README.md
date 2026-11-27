@@ -75,3 +75,5 @@ All development follows the **D5 agentic workflow** with continuous progress tra
 |------|----------|
 | [memorybank/components/_index.md](memorybank/components/_index.md) | Template and conventions for component docs |
 | [memorybank/components/static-hosting.md](memorybank/components/static-hosting.md) | Blazor WebAssembly hosting, GitHub Pages deploy, browser-side storage and export |
+| [memorybank/components/demo-role-switcher.md](memorybank/components/demo-role-switcher.md) | Demo role selector, saved role, role start pages |
+| [memorybank/components/pastel-pilot-integration.md](memorybank/components/pastel-pilot-integration.md) | Outbox, simulated Pastel and Pilot, integration notices |
